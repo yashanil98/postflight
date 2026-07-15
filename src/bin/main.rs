@@ -71,6 +71,13 @@ enum Commands {
 
     /// Generate a default config file at ~/.postflight/config.toml
     Init,
+
+    /// Replay the terminal output of a recorded session
+    Replay {
+        /// Session ID (timestamp). Defaults to latest.
+        #[arg(short, long)]
+        session: Option<String>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -82,6 +89,7 @@ fn main() -> Result<()> {
         Commands::Sessions => cmd_sessions(),
         Commands::Clean { keep } => cmd_clean(keep),
         Commands::Init => cmd_init(),
+        Commands::Replay { session } => cmd_replay(session),
     }
 }
 
@@ -459,5 +467,26 @@ process_poll_interval_ms = 250
     )?;
 
     println!("created config at {}", config_path.display());
+    Ok(())
+}
+
+fn cmd_replay(session_id: Option<String>) -> Result<()> {
+    let session_dir = if let Some(id) = session_id {
+        Config::sessions_dir().join(&id)
+    } else {
+        Session::latest_session()?.context("no sessions found")?
+    };
+
+    let terminal_path = session_dir.join("terminal.raw");
+    if !terminal_path.exists() {
+        anyhow::bail!("no terminal recording found in {}", session_dir.display());
+    }
+
+    let data = std::fs::read(&terminal_path)
+        .with_context(|| format!("failed to read {}", terminal_path.display()))?;
+
+    let _ = std::io::Write::write_all(&mut std::io::stdout(), &data);
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+
     Ok(())
 }
