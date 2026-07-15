@@ -365,27 +365,51 @@ fn cmd_sessions() -> Result<()> {
         return Ok(());
     }
 
-    println!("{:<20} {:<10} {:<40}", "SESSION", "EXIT", "COMMAND");
-    println!("{}", "\u{2500}".repeat(70));
+    println!(
+        "{:<20} {:<6} {:<8} {:<7} {:<30}",
+        "SESSION", "EXIT", "DURATION", "FILES", "COMMAND"
+    );
+    println!("{}", "\u{2500}".repeat(75));
 
     for (id, path) in &sessions {
         let summary = Session::load_summary(path);
         match summary {
             Ok(s) => {
-                let cmd_display = if s.command.len() > 38 {
-                    format!("{}...", &s.command[..35])
+                let cmd_display = if s.command.len() > 28 {
+                    format!("{}...", &s.command[..25])
                 } else {
                     s.command.clone()
                 };
-                println!("{:<20} {:<10} {:<40}", id, s.exit_code, cmd_display);
+                let duration = format_duration_short(s.duration);
+                let file_count = s.files_created.len()
+                    + s.files_modified.len()
+                    + s.files_deleted.len();
+                println!(
+                    "{:<20} {:<6} {:<8} {:<7} {:<30}",
+                    id, s.exit_code, duration, file_count, cmd_display
+                );
             }
             Err(_) => {
-                println!("{:<20} {:<10} {:<40}", id, "?", "(no summary)");
+                println!(
+                    "{:<20} {:<6} {:<8} {:<7} {:<30}",
+                    id, "?", "-", "-", "(no summary)"
+                );
             }
         }
     }
 
     Ok(())
+}
+
+fn format_duration_short(d: Duration) -> String {
+    let secs = d.as_secs();
+    if secs < 60 {
+        format!("{secs}s")
+    } else if secs < 3600 {
+        format!("{}m{}s", secs / 60, secs % 60)
+    } else {
+        format!("{}h{}m", secs / 3600, (secs % 3600) / 60)
+    }
 }
 
 fn cmd_clean(keep: Option<usize>) -> Result<()> {
