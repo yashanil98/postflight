@@ -171,7 +171,8 @@ fn run_inotify_watcher(
     read_paths: &Arc<Mutex<HashSet<PathBuf>>>,
     stop_rx: &mpsc::Receiver<()>,
 ) {
-    use inotify::{EventMask, Inotify, WatchMask};
+    use inotify::{EventMask, Inotify, WatchDescriptor, WatchMask};
+    use std::collections::HashMap;
 
     let mut inotify = match Inotify::init() {
         Ok(i) => i,
@@ -185,7 +186,9 @@ fn run_inotify_watcher(
         | WatchMask::MOVED_TO
         | WatchMask::ACCESS;
 
-    let _ = inotify.watches().add(workspace, watch_mask);
+    let mut wd_to_path: HashMap<WatchDescriptor, PathBuf> = HashMap::new();
+
+    add_watches_recursive(&mut inotify, workspace, config, watch_mask, &mut wd_to_path);
 
     let mut buffer = [0u8; 4096];
 
@@ -197,10 +200,23 @@ fn run_inotify_watcher(
         if let Ok(events_iter) = inotify.read_events(&mut buffer) {
             let mut new_events = Vec::new();
             for event in events_iter {
+                let parent_dir = match wd_to_path.get(&event.wd) {
+                    Some(p) => p.clone(),
+                    None => continue,
+                };
+
                 if let Some(name) = event.name {
-                    let path = workspace.join(name.to_string_lossy().as_ref());
+                    let path = parent_dir.join(name.to_string_lossy().as_ref());
                     if config.should_exclude(&path) {
                         continue;
+                    }
+
+                    if event.mask.contains(EventMask::ISDIR)
+                        && event.mask.contains(EventMask::CREATE)
+                    {
+                        add_watches_recursive(
+                            &mut inotify, &path, config, watch_mask, &mut wd_to_path,
+                        );
                     }
 
                     if event.mask.contains(EventMask::CREATE) {
@@ -232,5 +248,34 @@ fn run_inotify_watcher(
         }
 
         std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn add_watches_recursive(
+    inotify: &mut inotify::Inotify,
+    dir: &Path,
+    config: &Config,
+    mask: inotify::WatchMask,
+    wd_map: &mut std::collections::HashMap<inotify::WatchDescriptor, PathBuf>,
+) {
+    if config.should_exclude(dir) {
+        return;
+    }
+
+    if let Ok(wd) = inotify.watches().add(dir, mask) {
+        wd_map.insert(wd, dir.to_path_buf());
+    }
+
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() && !config.should_exclude(&path) {
+            add_watches_recursive(inotify, &path, config, mask, wd_map);
+        }
     }
 }
