@@ -15,17 +15,25 @@ cargo install --path .
 postflight run "claude code fix the auth bug"
 postflight run "aider --model claude-3.5-sonnet fix server.py"
 
+# Quiet mode (record without printing the report)
+postflight run "make build" --quiet
+
+# Machine-readable output from a live run (child output goes to stderr)
+postflight run "npm test" --json | jq .exit_code
+
 # Show the last session's report
 postflight report
-
-# Structured output for other tools
 postflight report --json
+postflight report --diff    # include file diffs
 
-# List all recorded sessions
+# List all recorded sessions (shows duration + file counts)
 postflight sessions
 
 # Clean up old sessions
 postflight clean --keep 10
+
+# Generate a documented config file
+postflight init
 ```
 
 ## Example Output
@@ -39,10 +47,10 @@ postflight clean --keep 10
 
 files changed
   created (1)
-    + src/auth/middleware.rs
+    + src/auth/middleware.rs (1.2 KiB)
   modified (2)
-    ~ src/server.rs
-    ~ src/auth/mod.rs
+    ~ src/server.rs (4.8 KiB)
+    ~ src/auth/mod.rs (890 B)
 
 files read
   src/ (12 files)
@@ -112,11 +120,11 @@ allowed?" It composes with sandboxes rather than competing with them.
 
 ## Configuration
 
-Optional. Create `~/.postflight/config.toml`:
+Optional. Run `postflight init` to generate a documented config, or create `~/.postflight/config.toml` manually:
 
 ```toml
 session_retention = 20
-exclude_patterns = [".git/**", "target/**", "node_modules/**"]
+exclude_patterns = [".git/**", "target/**", "node_modules/**", "*.pyc"]
 network_poll_interval_ms = 500
 process_poll_interval_ms = 250
 ```
