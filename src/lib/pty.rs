@@ -1,6 +1,7 @@
 use anyhow::Result;
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
 use nix::sys::signal::{Signal, kill};
+use nix::sys::termios::{SetArg, Termios, cfmakeraw, tcgetattr, tcsetattr};
 use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
 use nix::unistd::Pid;
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
@@ -14,6 +15,42 @@ pub struct PtyChild {
 pub struct PtyResult {
     pub exit_code: i32,
     pub duration: Duration,
+}
+
+/// Puts the controlling terminal into raw mode so keystrokes pass through
+/// to the child PTY unbuffered, and restores the original settings on drop
+/// (including on panic or error return).
+struct RawModeGuard {
+    fd: std::os::fd::RawFd,
+    original: Termios,
+}
+
+impl RawModeGuard {
+    fn new(fd: std::os::fd::RawFd) -> Option<Self> {
+        let borrowed = unsafe { BorrowedFd::borrow_raw(fd) };
+        let original = tcgetattr(borrowed).ok()?;
+        let mut raw = original.clone();
+        cfmakeraw(&mut raw);
+        tcsetattr(borrowed, SetArg::TCSANOW, &raw).ok()?;
+        Some(Self { fd, original })
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        let borrowed = unsafe { BorrowedFd::borrow_raw(self.fd) };
+        let _ = tcsetattr(borrowed, SetArg::TCSANOW, &self.original);
+    }
+}
+
+/// Copies the window size from `src_fd` (the real terminal) to `dst_fd`
+/// (the PTY primary) so TUIs render at the correct dimensions.
+fn sync_winsize(src_fd: std::os::fd::RawFd, dst_fd: std::os::fd::RawFd) {
+    let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
+    let ok = unsafe { libc::ioctl(src_fd, libc::TIOCGWINSZ, std::ptr::addr_of_mut!(ws)) };
+    if ok == 0 && ws.ws_col > 0 {
+        unsafe { libc::ioctl(dst_fd, libc::TIOCSWINSZ, std::ptr::addr_of!(ws)) };
+    }
 }
 
 impl PtyChild {
@@ -75,35 +112,91 @@ impl PtyChild {
         let start = Instant::now();
         let mut buf = [0u8; 4096];
 
+        let stdin_fd = std::io::stdin().as_raw_fd();
+        let stdin_is_tty = unsafe { libc::isatty(stdin_fd) } == 1;
+
+        // Interactive children (TUIs, prompts) need keystrokes forwarded.
+        // Raw mode stops the outer terminal from line-buffering and echoing;
+        // the guard restores the original settings when this function exits.
+        let _raw_guard = if stdin_is_tty {
+            sync_winsize(stdin_fd, self.primary_fd.as_raw_fd());
+            RawModeGuard::new(stdin_fd)
+        } else {
+            None
+        };
+
         loop {
+            if stdin_is_tty {
+                sync_winsize(stdin_fd, self.primary_fd.as_raw_fd());
+            }
+
             let fd = unsafe { BorrowedFd::borrow_raw(self.primary_fd.as_raw_fd()) };
-            let mut poll_fds = [PollFd::new(fd, PollFlags::POLLIN)];
+            let stdin_borrowed = unsafe { BorrowedFd::borrow_raw(stdin_fd) };
+            let mut poll_fds = if stdin_is_tty {
+                vec![
+                    PollFd::new(fd, PollFlags::POLLIN),
+                    PollFd::new(stdin_borrowed, PollFlags::POLLIN),
+                ]
+            } else {
+                vec![PollFd::new(fd, PollFlags::POLLIN)]
+            };
 
             match poll(&mut poll_fds, PollTimeout::from(100u16)) {
                 Ok(n) if n > 0 => {
-                    let revents = poll_fds[0].revents().unwrap_or(PollFlags::empty());
-                    if revents.contains(PollFlags::POLLHUP) && !revents.contains(PollFlags::POLLIN) {
+                    let child_revents = poll_fds[0].revents().unwrap_or(PollFlags::empty());
+                    let stdin_ready = poll_fds
+                        .get(1)
+                        .and_then(nix::poll::PollFd::revents)
+                        .is_some_and(|r| r.contains(PollFlags::POLLIN));
+
+                    if stdin_ready {
+                        let n_in = unsafe {
+                            libc::read(stdin_fd, buf.as_mut_ptr().cast(), buf.len())
+                        };
+                        if n_in > 0 {
+                            let mut written = 0;
+                            while written < n_in as usize {
+                                let n_out = unsafe {
+                                    libc::write(
+                                        self.primary_fd.as_raw_fd(),
+                                        buf.as_ptr().add(written).cast(),
+                                        n_in as usize - written,
+                                    )
+                                };
+                                if n_out <= 0 {
+                                    break;
+                                }
+                                written += n_out as usize;
+                            }
+                        }
+                    }
+
+                    if child_revents.contains(PollFlags::POLLHUP)
+                        && !child_revents.contains(PollFlags::POLLIN)
+                    {
                         break;
                     }
 
-                    let bytes_read = unsafe {
-                        libc::read(
-                            self.primary_fd.as_raw_fd(),
-                            buf.as_mut_ptr().cast(),
-                            buf.len(),
-                        )
-                    };
-                    match bytes_read {
-                        0 => break,
-                        n if n > 0 => {
-                            let n = n as usize;
-                            on_output(&buf[..n]);
-                        }
-                        _ => {
-                            let errno = std::io::Error::last_os_error();
-                            match errno.raw_os_error() {
-                                Some(libc::EIO | libc::EAGAIN) => break,
-                                _ => return Err(errno.into()),
+                    if child_revents.contains(PollFlags::POLLIN) {
+                        let bytes_read = unsafe {
+                            libc::read(
+                                self.primary_fd.as_raw_fd(),
+                                buf.as_mut_ptr().cast(),
+                                buf.len(),
+                            )
+                        };
+                        match bytes_read {
+                            0 => break,
+                            n if n > 0 => {
+                                let n = n as usize;
+                                on_output(&buf[..n]);
+                            }
+                            _ => {
+                                let errno = std::io::Error::last_os_error();
+                                match errno.raw_os_error() {
+                                    Some(libc::EIO | libc::EAGAIN) => break,
+                                    _ => return Err(errno.into()),
+                                }
                             }
                         }
                     }
