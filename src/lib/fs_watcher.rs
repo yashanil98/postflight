@@ -38,7 +38,11 @@ impl FsWatcher {
         let read_paths = Arc::clone(&self.read_paths);
 
         let handle = thread::spawn(move || {
+            #[cfg(target_os = "macos")]
             run_polling_watcher(&workspace, &config, &events, &read_paths, &stop_rx);
+
+            #[cfg(target_os = "linux")]
+            run_inotify_watcher(&workspace, &config, &events, &read_paths, &stop_rx);
         });
 
         self.handle = Some(handle);
@@ -64,6 +68,7 @@ impl FsWatcher {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn run_polling_watcher(
     workspace: &Path,
     config: &Config,
@@ -155,5 +160,77 @@ fn scan_directory(
                 }
             }
         }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn run_inotify_watcher(
+    workspace: &Path,
+    config: &Config,
+    events: &Arc<Mutex<Vec<Event>>>,
+    read_paths: &Arc<Mutex<HashSet<PathBuf>>>,
+    stop_rx: &mpsc::Receiver<()>,
+) {
+    use inotify::{EventMask, Inotify, WatchMask};
+
+    let mut inotify = match Inotify::init() {
+        Ok(i) => i,
+        Err(_) => return,
+    };
+
+    let watch_mask = WatchMask::CREATE
+        | WatchMask::MODIFY
+        | WatchMask::DELETE
+        | WatchMask::MOVED_FROM
+        | WatchMask::MOVED_TO
+        | WatchMask::ACCESS;
+
+    let _ = inotify.watches().add(workspace, watch_mask);
+
+    let mut buffer = [0u8; 4096];
+
+    loop {
+        if stop_rx.try_recv().is_ok() {
+            break;
+        }
+
+        if let Ok(events_iter) = inotify.read_events(&mut buffer) {
+            let mut new_events = Vec::new();
+            for event in events_iter {
+                if let Some(name) = event.name {
+                    let path = workspace.join(name.to_string_lossy().as_ref());
+                    if config.should_exclude(&path) {
+                        continue;
+                    }
+
+                    if event.mask.contains(EventMask::CREATE) {
+                        new_events.push(Event::FileCreated(FileEvent {
+                            path: path.clone(),
+                            timestamp: Utc::now(),
+                            size_bytes: std::fs::metadata(&path).ok().map(|m| m.len()),
+                        }));
+                    } else if event.mask.contains(EventMask::MODIFY) {
+                        new_events.push(Event::FileModified(FileEvent {
+                            path: path.clone(),
+                            timestamp: Utc::now(),
+                            size_bytes: std::fs::metadata(&path).ok().map(|m| m.len()),
+                        }));
+                    } else if event.mask.contains(EventMask::DELETE) {
+                        new_events.push(Event::FileDeleted(FileEvent {
+                            path,
+                            timestamp: Utc::now(),
+                            size_bytes: None,
+                        }));
+                    } else if event.mask.contains(EventMask::ACCESS) {
+                        read_paths.lock().unwrap().insert(path);
+                    }
+                }
+            }
+            if !new_events.is_empty() {
+                events.lock().unwrap().extend(new_events);
+            }
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
 }

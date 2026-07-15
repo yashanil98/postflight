@@ -133,6 +133,10 @@ Each session stores `events.jsonl` with one JSON object per line:
 {"type":"session_end","exit_code":0,"duration":{"secs":34,"nanos":0},"timestamp":"..."}
 ```
 
+## Design
+
+See [DESIGN.md](DESIGN.md) for architecture decisions, tradeoffs, and the v2 roadmap.
+
 ## License
 
 MIT
