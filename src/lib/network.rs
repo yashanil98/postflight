@@ -101,8 +101,11 @@ impl NetworkObserver {
                 Err(_) => continue,
             };
 
-            let node = parts[parts.len() - 2];
-            let name = parts[parts.len() - 1];
+            // NODE is always at index 7 in lsof -i output. The NAME field
+            // follows at index 8, but may be trailed by a state like
+            // "(ESTABLISHED)" at index 9+.
+            let node = parts[7];
+            let name = parts[8];
 
             let protocol = match node.to_uppercase().as_str() {
                 "TCP" => Protocol::Tcp,
@@ -202,5 +205,141 @@ mod tests {
     fn test_parse_ipv6() {
         let result = parse_remote_address("*:443->[2001:db8::1]:8080");
         assert_eq!(result, Some(("2001:db8::1".to_string(), 8080)));
+    }
+
+    #[test]
+    fn test_deduplication_suppresses_repeated_connections() {
+        let mut observer = NetworkObserver::new(1, 100);
+
+        let event_a = NetworkEvent {
+            pid: 100,
+            remote_host: "example.com".to_string(),
+            remote_port: 443,
+            protocol: Protocol::Tcp,
+            timestamp: Utc::now(),
+        };
+        let event_b = NetworkEvent {
+            pid: 100,
+            remote_host: "other.io".to_string(),
+            remote_port: 80,
+            protocol: Protocol::Tcp,
+            timestamp: Utc::now(),
+        };
+
+        // First poll: both connections are new
+        let key_a = ConnectionKey {
+            pid: event_a.pid,
+            remote_host: event_a.remote_host.clone(),
+            remote_port: event_a.remote_port,
+            protocol: event_a.protocol.clone(),
+        };
+        let key_b = ConnectionKey {
+            pid: event_b.pid,
+            remote_host: event_b.remote_host.clone(),
+            remote_port: event_b.remote_port,
+            protocol: event_b.protocol.clone(),
+        };
+
+        assert!(observer.seen_connections.insert(key_a.clone()));
+        assert!(observer.seen_connections.insert(key_b.clone()));
+
+        // Second insert of the same keys returns false (already present)
+        assert!(!observer.seen_connections.insert(key_a));
+        assert!(!observer.seen_connections.insert(key_b));
+    }
+
+    #[test]
+    fn test_deduplication_via_poll_with_lsof_output() {
+        let mut observer = NetworkObserver::new(1, 100);
+
+        let lsof_output = "\
+COMMAND   PID USER   FD   TYPE  DEVICE SIZE/OFF NODE NAME
+curl      100 user   3u   IPv4  12345      0t0  TCP  192.168.1.1:55000->93.184.216.34:443
+curl      100 user   4u   IPv4  12346      0t0  TCP  192.168.1.1:55001->10.0.0.1:8080";
+
+        // First parse: both connections are new
+        let connections = observer.parse_lsof_output(lsof_output);
+        assert_eq!(connections.len(), 2);
+
+        // Feed them through the dedup logic
+        let mut new_events = Vec::new();
+        for conn in connections {
+            let key = ConnectionKey {
+                pid: conn.pid,
+                remote_host: conn.remote_host.clone(),
+                remote_port: conn.remote_port,
+                protocol: conn.protocol.clone(),
+            };
+            if !observer.seen_connections.contains(&key) {
+                observer.seen_connections.insert(key);
+                new_events.push(conn);
+            }
+        }
+        assert_eq!(new_events.len(), 2);
+        assert_eq!(new_events[0].remote_host, "93.184.216.34");
+        assert_eq!(new_events[1].remote_host, "10.0.0.1");
+
+        // Second parse of the same output: all are duplicates
+        let connections = observer.parse_lsof_output(lsof_output);
+        assert_eq!(connections.len(), 2);
+
+        let mut new_events = Vec::new();
+        for conn in connections {
+            let key = ConnectionKey {
+                pid: conn.pid,
+                remote_host: conn.remote_host.clone(),
+                remote_port: conn.remote_port,
+                protocol: conn.protocol.clone(),
+            };
+            if !observer.seen_connections.contains(&key) {
+                observer.seen_connections.insert(key);
+                new_events.push(conn);
+            }
+        }
+        assert_eq!(new_events.len(), 0);
+
+        // Third parse with one new connection: only the new one passes
+        let lsof_with_new = "\
+COMMAND   PID USER   FD   TYPE  DEVICE SIZE/OFF NODE NAME
+curl      100 user   3u   IPv4  12345      0t0  TCP  192.168.1.1:55000->93.184.216.34:443
+wget      101 user   5u   IPv4  12347      0t0  UDP  192.168.1.1:55002->8.8.8.8:53";
+
+        let connections = observer.parse_lsof_output(lsof_with_new);
+        assert_eq!(connections.len(), 2);
+
+        let mut new_events = Vec::new();
+        for conn in connections {
+            let key = ConnectionKey {
+                pid: conn.pid,
+                remote_host: conn.remote_host.clone(),
+                remote_port: conn.remote_port,
+                protocol: conn.protocol.clone(),
+            };
+            if !observer.seen_connections.contains(&key) {
+                observer.seen_connections.insert(key);
+                new_events.push(conn);
+            }
+        }
+        assert_eq!(new_events.len(), 1);
+        assert_eq!(new_events[0].remote_host, "8.8.8.8");
+        assert_eq!(new_events[0].remote_port, 53);
+        assert_eq!(new_events[0].protocol, Protocol::Udp);
+    }
+
+    #[test]
+    fn test_parse_lsof_handles_established_state_suffix() {
+        let observer = NetworkObserver::new(1, 100);
+
+        let lsof_output = "\
+COMMAND   PID USER   FD   TYPE  DEVICE SIZE/OFF NODE NAME
+ssh       200 user   3u   IPv4  99999      0t0  TCP  10.0.0.5:22->54.231.10.1:443 (ESTABLISHED)
+curl      201 user   4u   IPv4  99998      0t0  TCP  10.0.0.5:33->1.2.3.4:8080 (CLOSE_WAIT)";
+
+        let events = observer.parse_lsof_output(lsof_output);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].remote_host, "54.231.10.1");
+        assert_eq!(events[0].remote_port, 443);
+        assert_eq!(events[1].remote_host, "1.2.3.4");
+        assert_eq!(events[1].remote_port, 8080);
     }
 }
