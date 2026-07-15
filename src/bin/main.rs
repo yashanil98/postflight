@@ -38,6 +38,10 @@ enum Commands {
         /// Suppress the report printed after the session ends
         #[arg(short, long)]
         quiet: bool,
+
+        /// Print the session summary as JSON to stdout after the run
+        #[arg(long)]
+        json: bool,
     },
 
     /// Show the report for a session
@@ -70,14 +74,14 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Run { command, workspace, quiet } => cmd_run(&command, workspace, quiet),
+        Commands::Run { command, workspace, quiet, json } => cmd_run(&command, workspace, quiet, json),
         Commands::Report { session, json, diff } => cmd_report(session, json, diff),
         Commands::Sessions => cmd_sessions(),
         Commands::Clean { keep } => cmd_clean(keep),
     }
 }
 
-fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool) -> Result<()> {
+fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json: bool) -> Result<()> {
     let config = Config::load()?;
     let workspace = workspace_override
         .or_else(|| config.workspace_root.clone())
@@ -168,6 +172,12 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool) -> R
 
     let pty_result = child.wait_with_output(|data| {
         let _ = session.write_terminal_chunk(data);
+        if json {
+            let _ = std::io::Write::write_all(&mut std::io::stderr(), data);
+        } else {
+            let _ = std::io::Write::write_all(&mut std::io::stdout(), data);
+            let _ = std::io::Write::flush(&mut std::io::stdout());
+        }
     })?;
 
     running.store(false, Ordering::Relaxed);
@@ -287,7 +297,9 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool) -> R
 
     session.save_summary(&summary)?;
 
-    if !quiet {
+    if json {
+        println!("{}", report::render_json(&summary));
+    } else if !quiet {
         eprintln!();
         let report_output = report::render_terminal(&summary, false);
         eprint!("{report_output}");

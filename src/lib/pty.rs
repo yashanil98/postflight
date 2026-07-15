@@ -3,7 +3,6 @@ use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
 use nix::sys::signal::{Signal, kill};
 use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
 use nix::unistd::Pid;
-use std::io::Write as _;
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::time::{Duration, Instant};
 
@@ -99,8 +98,6 @@ impl PtyChild {
                         n if n > 0 => {
                             let n = n as usize;
                             on_output(&buf[..n]);
-                            let _ = std::io::stdout().write_all(&buf[..n]);
-                            let _ = std::io::stdout().flush();
                         }
                         _ => {
                             let errno = std::io::Error::last_os_error();
@@ -166,8 +163,6 @@ impl PtyChild {
                     }
                     let n = bytes_read as usize;
                     on_output(&buf[..n]);
-                    let _ = std::io::stdout().write_all(&buf[..n]);
-                    let _ = std::io::stdout().flush();
                 }
                 _ => break,
             }
