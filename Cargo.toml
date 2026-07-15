@@ -29,6 +29,7 @@ colored = "3"
 nix = { version = "0.31", features = ["process", "signal", "poll", "term"] }
 libc = "0.2"
 bytesize = { version = "2", features = ["serde"] }
+signal-hook = "0.3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 fsevent-stream = "0.2"

@@ -107,6 +107,26 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool) -> R
     let child = PtyChild::spawn(command).context("failed to spawn command")?;
     let child_pid = child.pid.as_raw() as u32;
 
+    // Forward SIGINT/SIGTERM to the child process so Ctrl+C kills the child,
+    // not postflight. The session still gets saved after the child exits.
+    let child_pid_for_signal = child.pid;
+    let interrupted = Arc::new(AtomicBool::new(false));
+    let interrupted_handler = Arc::clone(&interrupted);
+    unsafe {
+        signal_hook::low_level::register(signal_hook::consts::SIGINT, move || {
+            interrupted_handler.store(true, Ordering::Relaxed);
+            let _ = nix::sys::signal::kill(child_pid_for_signal, nix::sys::signal::Signal::SIGINT);
+        })
+    }
+    .ok();
+    let child_pid_for_term = child.pid;
+    unsafe {
+        signal_hook::low_level::register(signal_hook::consts::SIGTERM, move || {
+            let _ = nix::sys::signal::kill(child_pid_for_term, nix::sys::signal::Signal::SIGTERM);
+        })
+    }
+    .ok();
+
     let mut process_tracker = ProcessTracker::new(child_pid, config.process_poll_interval_ms);
     let mut network_observer = NetworkObserver::new(child_pid, config.network_poll_interval_ms);
 
