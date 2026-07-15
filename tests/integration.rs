@@ -49,7 +49,7 @@ fn test_run_captures_subprocess() {
     let workspace = TempDir::new().unwrap();
 
     let mut cmd = postflight_cmd();
-    cmd.args(["run", "ls /tmp && sleep 0.5", "--workspace", workspace.path().to_str().unwrap()]);
+    cmd.args(["run", "ls /tmp && sleep 1", "--workspace", workspace.path().to_str().unwrap()]);
     cmd.assert()
         .success()
         .stderr(predicate::str::contains("postflight session report"));
@@ -62,7 +62,7 @@ fn test_run_detects_long_subprocess() {
     let mut cmd = postflight_cmd();
     cmd.args([
         "run",
-        "sleep 0.5",
+        "sleep 1",
         "--workspace",
         workspace.path().to_str().unwrap(),
     ]);
@@ -78,7 +78,7 @@ fn test_run_file_modification_detected() {
     fs::write(&test_file, "original content").unwrap();
 
     let command = format!(
-        "sleep 0.3 && echo 'modified' > {}",
+        "sleep 0.6 && echo 'modified' > {}",
         test_file.display()
     );
     let mut cmd = postflight_cmd();
