@@ -114,6 +114,7 @@ impl PtyChild {
 
         let stdin_fd = std::io::stdin().as_raw_fd();
         let stdin_is_tty = unsafe { libc::isatty(stdin_fd) } == 1;
+        let mut stdin_open = true;
 
         // Interactive children (TUIs, prompts) need keystrokes forwarded.
         // Raw mode stops the outer terminal from line-buffering and echoing;
@@ -132,7 +133,7 @@ impl PtyChild {
 
             let fd = unsafe { BorrowedFd::borrow_raw(self.primary_fd.as_raw_fd()) };
             let stdin_borrowed = unsafe { BorrowedFd::borrow_raw(stdin_fd) };
-            let mut poll_fds = if stdin_is_tty {
+            let mut poll_fds = if stdin_open {
                 vec![
                     PollFd::new(fd, PollFlags::POLLIN),
                     PollFd::new(stdin_borrowed, PollFlags::POLLIN),
@@ -168,6 +169,8 @@ impl PtyChild {
                                 }
                                 written += n_out as usize;
                             }
+                        } else {
+                            stdin_open = false;
                         }
                     }
 
