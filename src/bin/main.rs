@@ -68,6 +68,9 @@ enum Commands {
         #[arg(short, long)]
         keep: Option<usize>,
     },
+
+    /// Generate a default config file at ~/.postflight/config.toml
+    Init,
 }
 
 fn main() -> Result<()> {
@@ -78,6 +81,7 @@ fn main() -> Result<()> {
         Commands::Report { session, json, diff } => cmd_report(session, json, diff),
         Commands::Sessions => cmd_sessions(),
         Commands::Clean { keep } => cmd_clean(keep),
+        Commands::Init => cmd_init(),
     }
 }
 
@@ -414,5 +418,46 @@ fn cmd_clean(keep: Option<usize>) -> Result<()> {
     let retention = keep.unwrap_or(config.session_retention);
     let pruned = Session::prune_sessions(retention)?;
     println!("removed {pruned} session(s), keeping {retention}");
+    Ok(())
+}
+
+fn cmd_init() -> Result<()> {
+    let config_path = Config::config_path();
+
+    if config_path.exists() {
+        println!("config already exists at {}", config_path.display());
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(Config::config_dir())?;
+    std::fs::write(
+        &config_path,
+        r#"# postflight configuration
+
+# Number of sessions to keep before auto-pruning
+session_retention = 20
+
+# Workspace root override (defaults to current directory)
+# workspace_root = "/path/to/project"
+
+# Glob patterns for files/directories to ignore during observation
+exclude_patterns = [
+    ".git/**",
+    "target/**",
+    "node_modules/**",
+    ".postflight/**",
+    "*.pyc",
+    "__pycache__/**",
+]
+
+# How often to poll for network connections (milliseconds)
+network_poll_interval_ms = 500
+
+# How often to poll for subprocess changes (milliseconds)
+process_poll_interval_ms = 250
+"#,
+    )?;
+
+    println!("created config at {}", config_path.display());
     Ok(())
 }
