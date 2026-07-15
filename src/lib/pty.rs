@@ -49,7 +49,10 @@ impl PtyChild {
 
                     let shell = c"/bin/sh".as_ptr();
                     let flag = c"-c".as_ptr();
-                    let cmd = std::ffi::CString::new(command).unwrap();
+                    let cmd = match std::ffi::CString::new(command) {
+                        Ok(c) => c,
+                        Err(_) => libc::_exit(127),
+                    };
                     let args = [shell, flag, cmd.as_ptr(), std::ptr::null()];
                     libc::execvp(shell, args.as_ptr());
                     libc::_exit(127);
