@@ -1,3 +1,4 @@
+use bytesize::ByteSize;
 use crate::session::SessionSummary;
 use colored::Colorize;
 use std::time::Duration;
@@ -45,7 +46,8 @@ pub fn render_terminal(summary: &SessionSummary, _show_diffs: bool) -> String {
                 summary.files_created.len()
             ));
             for path in &summary.files_created {
-                output.push_str(&format!("    {} {}\n", "+".green(), path.display()));
+                let size = file_size_label(path);
+                output.push_str(&format!("    {} {} {}\n", "+".green(), path.display(), size.dimmed()));
             }
         }
 
@@ -56,7 +58,8 @@ pub fn render_terminal(summary: &SessionSummary, _show_diffs: bool) -> String {
                 summary.files_modified.len()
             ));
             for path in &summary.files_modified {
-                output.push_str(&format!("    {} {}\n", "~".yellow(), path.display()));
+                let size = file_size_label(path);
+                output.push_str(&format!("    {} {} {}\n", "~".yellow(), path.display(), size.dimmed()));
             }
         }
 
@@ -165,12 +168,13 @@ fn format_exit_code(code: i32) -> String {
 }
 
 fn format_bytes(bytes: u64) -> String {
-    if bytes < 1024 {
-        format!("{bytes} B")
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    ByteSize(bytes).to_string()
+}
+
+fn file_size_label(path: &std::path::Path) -> String {
+    match std::fs::metadata(path) {
+        Ok(meta) => format!("({})", ByteSize(meta.len())),
+        Err(_) => String::new(),
     }
 }
 
@@ -241,7 +245,7 @@ mod tests {
     #[test]
     fn test_format_bytes() {
         assert_eq!(format_bytes(500), "500 B");
-        assert_eq!(format_bytes(1500), "1.5 KB");
-        assert_eq!(format_bytes(1_500_000), "1.4 MB");
+        assert_eq!(format_bytes(1536), "1.5 KiB");
+        assert_eq!(format_bytes(1_572_864), "1.5 MiB");
     }
 }
