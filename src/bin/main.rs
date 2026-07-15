@@ -1,5 +1,5 @@
 use postflight::config::Config;
-use postflight::diff::{capture_snapshot, diff_snapshots};
+use postflight::diff::{capture_content, capture_snapshot, diff_snapshots, generate_unified_diff};
 use postflight::events::{Event, SessionEndEvent};
 use postflight::fs_watcher::FsWatcher;
 use postflight::network::NetworkObserver;
@@ -104,6 +104,7 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
 
     let exclude_fn = |p: &std::path::Path| config.should_exclude(p);
     let pre_snapshot = capture_snapshot(&workspace, &exclude_fn);
+    let pre_content = capture_content(&pre_snapshot);
 
     let mut fs_watcher = FsWatcher::new(workspace.clone(), config.clone());
     fs_watcher.start()?;
@@ -204,19 +205,15 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
     let files_modified: Vec<PathBuf> = snapshot_diff.modified;
     let files_deleted: Vec<PathBuf> = snapshot_diff.deleted;
 
-    // Generate diffs for modified files
+    // Generate unified diffs for modified text files
     for path in &files_modified {
-        if let (Some(pre_entry), true) = (pre_snapshot.get(path), path.exists()) {
-            if let Ok(new_content) = std::fs::read_to_string(path) {
-                let diff_content =
-                    format!("--- a/{}\n+++ b/{}\n(file modified, {} bytes -> {} bytes)\n",
-                        path.display(),
-                        path.display(),
-                        pre_entry.size,
-                        new_content.len()
-                    );
-                let filename = path.to_string_lossy();
-                session.save_diff(&filename, &diff_content)?;
+        if let Some(old_text) = pre_content.get(path) {
+            if let Ok(new_text) = std::fs::read_to_string(path) {
+                let diff_content = generate_unified_diff(old_text, &new_text, path);
+                if !diff_content.trim().is_empty() {
+                    let filename = path.to_string_lossy();
+                    session.save_diff(&filename, &diff_content)?;
+                }
             }
         }
     }

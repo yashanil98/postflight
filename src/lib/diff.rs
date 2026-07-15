@@ -61,6 +61,23 @@ fn walk_dir(dir: &Path, exclude: &dyn Fn(&Path) -> bool, snapshot: &mut FileSnap
     }
 }
 
+pub type ContentSnapshot = HashMap<PathBuf, String>;
+
+const MAX_DIFF_FILE_SIZE: u64 = 512 * 1024;
+
+pub fn capture_content(snapshot: &FileSnapshot) -> ContentSnapshot {
+    let mut contents = HashMap::new();
+    for (path, entry) in snapshot {
+        if entry.size > MAX_DIFF_FILE_SIZE {
+            continue;
+        }
+        if let Ok(text) = fs::read_to_string(path) {
+            contents.insert(path.clone(), text);
+        }
+    }
+    contents
+}
+
 pub struct DiffResult {
     pub created: Vec<PathBuf>,
     pub modified: Vec<PathBuf>,
