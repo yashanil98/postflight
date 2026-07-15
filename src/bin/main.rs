@@ -34,6 +34,10 @@ enum Commands {
         /// Workspace root to observe (defaults to current directory)
         #[arg(short, long)]
         workspace: Option<PathBuf>,
+
+        /// Suppress the report printed after the session ends
+        #[arg(short, long)]
+        quiet: bool,
     },
 
     /// Show the report for a session
@@ -66,14 +70,14 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Run { command, workspace } => cmd_run(&command, workspace),
+        Commands::Run { command, workspace, quiet } => cmd_run(&command, workspace, quiet),
         Commands::Report { session, json, diff } => cmd_report(session, json, diff),
         Commands::Sessions => cmd_sessions(),
         Commands::Clean { keep } => cmd_clean(keep),
     }
 }
 
-fn cmd_run(command: &str, workspace_override: Option<PathBuf>) -> Result<()> {
+fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool) -> Result<()> {
     let config = Config::load()?;
     let workspace = workspace_override
         .or_else(|| config.workspace_root.clone())
@@ -263,9 +267,11 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>) -> Result<()> {
 
     session.save_summary(&summary)?;
 
-    eprintln!();
-    let report_output = report::render_terminal(&summary, false);
-    eprint!("{report_output}");
+    if !quiet {
+        eprintln!();
+        let report_output = report::render_terminal(&summary, false);
+        eprint!("{report_output}");
+    }
 
     eprintln!(
         "{} session saved to {}",
