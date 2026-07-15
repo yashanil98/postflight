@@ -78,10 +78,15 @@ impl PtyChild {
 
         loop {
             let fd = unsafe { BorrowedFd::borrow_raw(self.primary_fd.as_raw_fd()) };
-            let poll_fd = PollFd::new(fd, PollFlags::POLLIN);
+            let mut poll_fds = [PollFd::new(fd, PollFlags::POLLIN)];
 
-            match poll(&mut [poll_fd], PollTimeout::from(100u16)) {
+            match poll(&mut poll_fds, PollTimeout::from(100u16)) {
                 Ok(n) if n > 0 => {
+                    let revents = poll_fds[0].revents().unwrap_or(PollFlags::empty());
+                    if revents.contains(PollFlags::POLLHUP) && !revents.contains(PollFlags::POLLIN) {
+                        break;
+                    }
+
                     let bytes_read = unsafe {
                         libc::read(
                             self.primary_fd.as_raw_fd(),
@@ -98,11 +103,11 @@ impl PtyChild {
                             let _ = std::io::stdout().flush();
                         }
                         _ => {
-                            let err = std::io::Error::last_os_error();
-                            if err.raw_os_error() == Some(libc::EIO) {
-                                break;
+                            let errno = std::io::Error::last_os_error();
+                            match errno.raw_os_error() {
+                                Some(libc::EIO | libc::EAGAIN) => break,
+                                _ => return Err(errno.into()),
                             }
-                            return Err(err.into());
                         }
                     }
                 }
@@ -141,9 +146,14 @@ impl PtyChild {
         let mut buf = [0u8; 4096];
         loop {
             let fd = unsafe { BorrowedFd::borrow_raw(self.primary_fd.as_raw_fd()) };
-            let poll_fd = PollFd::new(fd, PollFlags::POLLIN);
-            match poll(&mut [poll_fd], PollTimeout::from(50u16)) {
+            let mut poll_fds = [PollFd::new(fd, PollFlags::POLLIN)];
+            match poll(&mut poll_fds, PollTimeout::from(50u16)) {
                 Ok(n) if n > 0 => {
+                    let revents = poll_fds[0].revents().unwrap_or(PollFlags::empty());
+                    if revents.contains(PollFlags::POLLHUP) && !revents.contains(PollFlags::POLLIN) {
+                        break;
+                    }
+
                     let bytes_read = unsafe {
                         libc::read(
                             self.primary_fd.as_raw_fd(),
