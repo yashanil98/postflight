@@ -47,7 +47,8 @@ pub fn render_terminal(summary: &SessionSummary, _show_diffs: bool) -> String {
             ));
             for path in &summary.files_created {
                 let size = file_size_label(path);
-                output.push_str(&format!("    {} {} {}\n", "+".green(), path.display(), size.dimmed()));
+                let rel = relative_to(path, &summary.workspace);
+                output.push_str(&format!("    {} {} {}\n", "+".green(), rel, size.dimmed()));
             }
         }
 
@@ -59,7 +60,8 @@ pub fn render_terminal(summary: &SessionSummary, _show_diffs: bool) -> String {
             ));
             for path in &summary.files_modified {
                 let size = file_size_label(path);
-                output.push_str(&format!("    {} {} {}\n", "~".yellow(), path.display(), size.dimmed()));
+                let rel = relative_to(path, &summary.workspace);
+                output.push_str(&format!("    {} {} {}\n", "~".yellow(), rel, size.dimmed()));
             }
         }
 
@@ -70,7 +72,8 @@ pub fn render_terminal(summary: &SessionSummary, _show_diffs: bool) -> String {
                 summary.files_deleted.len()
             ));
             for path in &summary.files_deleted {
-                output.push_str(&format!("    {} {}\n", "-".red(), path.display()));
+                let rel = relative_to(path, &summary.workspace);
+                output.push_str(&format!("    {} {}\n", "-".red(), rel));
             }
         }
         output.push('\n');
@@ -176,6 +179,12 @@ fn file_size_label(path: &std::path::Path) -> String {
         Ok(meta) => format!("({})", ByteSize(meta.len())),
         Err(_) => String::new(),
     }
+}
+
+fn relative_to(path: &std::path::Path, base: &std::path::Path) -> String {
+    path.strip_prefix(base)
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| path.display().to_string())
 }
 
 fn group_by_directory(paths: &[std::path::PathBuf]) -> Vec<(String, Vec<String>)> {
