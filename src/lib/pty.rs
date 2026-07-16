@@ -126,8 +126,20 @@ impl PtyChild {
             None
         };
 
+        // Propagate terminal resizes to the child PTY via SIGWINCH.
+        let winch_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        if stdin_is_tty {
+            let flag = std::sync::Arc::clone(&winch_flag);
+            unsafe {
+                signal_hook::low_level::register(signal_hook::consts::SIGWINCH, move || {
+                    flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                })
+            }
+            .ok();
+        }
+
         loop {
-            if stdin_is_tty {
+            if winch_flag.swap(false, std::sync::atomic::Ordering::Relaxed) {
                 sync_winsize(stdin_fd, self.primary_fd.as_raw_fd());
             }
 
