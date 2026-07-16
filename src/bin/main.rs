@@ -356,7 +356,7 @@ fn cmd_report(session_id: Option<String>, json: bool, show_diff: bool) -> Result
                 for entry in std::fs::read_dir(&diffs_dir)? {
                     let entry = entry?;
                     if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                        println!("{content}");
+                        print!("{}", postflight::diff::format_diff_colored(&content));
                     }
                 }
             }

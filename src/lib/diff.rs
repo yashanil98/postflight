@@ -1,4 +1,4 @@
-use similar::{ChangeTag, TextDiff};
+use similar::TextDiff;
 use std::collections::HashMap;
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -132,25 +132,23 @@ pub fn generate_unified_diff(old_content: &str, new_content: &str, path: &Path) 
     output
 }
 
-pub fn format_diff_colored(old_content: &str, new_content: &str, path: &Path) -> String {
-    let diff = TextDiff::from_lines(old_content, new_content);
-    let path_str = path.to_string_lossy();
+pub fn format_diff_colored(content: &str) -> String {
+    use colored::Colorize;
 
     let mut output = String::new();
-    output.push_str(&format!("--- a/{path_str}\n"));
-    output.push_str(&format!("+++ b/{path_str}\n"));
-
-    for hunk in diff.unified_diff().context_radius(3).iter_hunks() {
-        for change in hunk.iter_changes() {
-            let line = match change.tag() {
-                ChangeTag::Delete => format!("-{}", change.value()),
-                ChangeTag::Insert => format!("+{}", change.value()),
-                ChangeTag::Equal => format!(" {}", change.value()),
-            };
-            output.push_str(&line);
+    for line in content.lines() {
+        if line.starts_with("--- ") || line.starts_with("+++ ") {
+            output.push_str(&format!("{}\n", line.bold()));
+        } else if line.starts_with("@@") {
+            output.push_str(&format!("{}\n", line.cyan()));
+        } else if line.starts_with('+') {
+            output.push_str(&format!("{}\n", line.green()));
+        } else if line.starts_with('-') {
+            output.push_str(&format!("{}\n", line.red()));
+        } else {
+            output.push_str(&format!("{line}\n"));
         }
     }
-
     output
 }
 
