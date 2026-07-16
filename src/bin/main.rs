@@ -60,7 +60,15 @@ enum Commands {
     },
 
     /// List stored sessions
-    Sessions,
+    Sessions {
+        /// Filter sessions by command substring
+        #[arg(short, long)]
+        filter: Option<String>,
+
+        /// Show only sessions with non-zero exit codes
+        #[arg(long)]
+        failed: bool,
+    },
 
     /// Remove old sessions
     Clean {
@@ -86,7 +94,7 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Run { command, workspace, quiet, json } => cmd_run(&command, workspace, quiet, json),
         Commands::Report { session, json, diff } => cmd_report(session, json, diff),
-        Commands::Sessions => cmd_sessions(),
+        Commands::Sessions { filter, failed } => cmd_sessions(filter, failed),
         Commands::Clean { keep } => cmd_clean(keep),
         Commands::Init => cmd_init(),
         Commands::Replay { session } => cmd_replay(session),
@@ -366,7 +374,7 @@ fn cmd_report(session_id: Option<String>, json: bool, show_diff: bool) -> Result
     Ok(())
 }
 
-fn cmd_sessions() -> Result<()> {
+fn cmd_sessions(filter: Option<String>, failed: bool) -> Result<()> {
     let sessions = Session::list_sessions()?;
 
     if sessions.is_empty() {
@@ -381,29 +389,40 @@ fn cmd_sessions() -> Result<()> {
     println!("{}", "\u{2500}".repeat(75));
 
     for (id, path) in &sessions {
-        let summary = Session::load_summary(path);
-        match summary {
-            Ok(s) => {
-                let cmd_display = if s.command.len() > 28 {
-                    format!("{}...", &s.command[..25])
-                } else {
-                    s.command.clone()
-                };
-                let duration = format_duration_short(s.duration);
-                let file_count = s.files_created.len()
-                    + s.files_modified.len()
-                    + s.files_deleted.len();
-                println!(
-                    "{:<20} {:<6} {:<8} {:<7} {:<30}",
-                    id, s.exit_code, duration, file_count, cmd_display
-                );
+        if let Ok(s) = Session::load_summary(path) {
+            if failed && s.exit_code == 0 {
+                continue;
             }
-            Err(_) => {
-                println!(
-                    "{:<20} {:<6} {:<8} {:<7} {:<30}",
-                    id, "?", "-", "-", "(no summary)"
-                );
+            if let Some(ref pattern) = filter {
+                let pattern_lower = pattern.to_lowercase();
+                if !s.command.to_lowercase().contains(&pattern_lower)
+                    && !id.contains(&pattern_lower)
+                {
+                    continue;
+                }
             }
+
+            let cmd_display = if s.command.len() > 28 {
+                format!("{}...", &s.command[..25])
+            } else {
+                s.command.clone()
+            };
+            let duration = format_duration_short(s.duration);
+            let file_count = s.files_created.len()
+                + s.files_modified.len()
+                + s.files_deleted.len();
+            println!(
+                "{:<20} {:<6} {:<8} {:<7} {:<30}",
+                id, s.exit_code, duration, file_count, cmd_display
+            );
+        } else {
+            if failed {
+                continue;
+            }
+            println!(
+                "{:<20} {:<6} {:<8} {:<7} {:<30}",
+                id, "?", "-", "-", "(no summary)"
+            );
         }
     }
 
