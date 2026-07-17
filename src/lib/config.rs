@@ -34,8 +34,16 @@ impl Config {
         let config_path = Self::config_path();
         if config_path.exists() {
             let content = std::fs::read_to_string(&config_path)?;
-            let config: Self = toml::from_str(&content)?;
-            Ok(config)
+            match toml::from_str(&content) {
+                Ok(config) => Ok(config),
+                Err(e) => {
+                    eprintln!(
+                        "warning: failed to parse {}, using defaults: {e}",
+                        config_path.display()
+                    );
+                    Ok(Self::default())
+                }
+            }
         } else {
             Ok(Self::default())
         }
