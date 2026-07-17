@@ -339,9 +339,28 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
     std::process::exit(pty_result.exit_code);
 }
 
+fn resolve_session_id(id: &str) -> Result<PathBuf> {
+    let exact = Config::sessions_dir().join(id);
+    if exact.exists() {
+        return Ok(exact);
+    }
+
+    let sessions = Session::list_sessions()?;
+    let matches: Vec<_> = sessions
+        .iter()
+        .filter(|(name, _)| name.starts_with(id))
+        .collect();
+
+    match matches.len() {
+        0 => anyhow::bail!("no session matching '{id}'"),
+        1 => Ok(matches[0].1.clone()),
+        n => anyhow::bail!("'{id}' is ambiguous ({n} matches), be more specific"),
+    }
+}
+
 fn cmd_report(session_id: Option<String>, json: bool, show_diff: bool) -> Result<()> {
     let session_dir = if let Some(id) = session_id {
-        Config::sessions_dir().join(&id)
+        resolve_session_id(&id)?
     } else {
         Session::latest_session()?.context("no sessions found")?
     };
@@ -491,7 +510,7 @@ process_poll_interval_ms = 250
 
 fn cmd_replay(session_id: Option<String>) -> Result<()> {
     let session_dir = if let Some(id) = session_id {
-        Config::sessions_dir().join(&id)
+        resolve_session_id(&id)?
     } else {
         Session::latest_session()?.context("no sessions found")?
     };
