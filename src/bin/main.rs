@@ -369,7 +369,8 @@ fn cmd_report(session_id: Option<String>, json: bool, show_diff: bool) -> Result
         anyhow::bail!("session not found: {}", session_dir.display());
     }
 
-    let summary = Session::load_summary(&session_dir)?;
+    let summary = Session::load_summary(&session_dir)
+        .with_context(|| format!("failed to load session summary (file may be corrupted): {}", session_dir.display()))?;
 
     if json {
         println!("{}", report::render_json(&summary));

@@ -87,7 +87,14 @@ impl Session {
     }
 
     pub fn write_terminal_chunk(&self, data: &[u8]) -> Result<()> {
+        const MAX_TERMINAL_RAW_BYTES: u64 = 50 * 1024 * 1024;
+
         let path = self.dir.join("terminal.raw");
+        if let Ok(meta) = fs::metadata(&path) {
+            if meta.len() >= MAX_TERMINAL_RAW_BYTES {
+                return Ok(());
+            }
+        }
         let mut file = fs::OpenOptions::new()
             .create(true)
             .append(true)
