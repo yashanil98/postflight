@@ -173,7 +173,10 @@ impl Session {
         let mut removed = 0;
         if sessions.len() > keep {
             for (_, path) in sessions.into_iter().skip(keep) {
-                fs::remove_dir_all(&path)?;
+                if !path.join("summary.json").exists() {
+                    continue;
+                }
+                let _ = fs::remove_dir_all(&path);
                 removed += 1;
             }
         }
