@@ -47,7 +47,10 @@ pub struct Session {
 
 impl Session {
     pub fn create(command: &str) -> Result<Self> {
-        let id = Utc::now().format("%Y%m%d_%H%M%S").to_string();
+        let now = Utc::now();
+        let base_id = now.format("%Y%m%d_%H%M%S").to_string();
+        let millis = now.format("%3f").to_string();
+        let id = format!("{base_id}_{millis}");
         let dir = Config::sessions_dir().join(&id);
         fs::create_dir_all(&dir).context("failed to create session directory")?;
         fs::create_dir_all(dir.join("diffs")).context("failed to create diffs directory")?;
