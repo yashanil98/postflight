@@ -67,7 +67,13 @@ impl Config {
         let path_str = path.to_string_lossy();
         self.exclude_patterns.iter().any(|pattern| {
             if let Some(prefix) = pattern.strip_suffix("/**") {
-                path_str.contains(prefix)
+                let sep_prefix_sep = format!("/{prefix}/");
+                let prefix_sep = format!("{prefix}/");
+                let sep_prefix = format!("/{prefix}");
+                path_str.contains(&sep_prefix_sep)
+                    || path_str.starts_with(&prefix_sep)
+                    || path_str.ends_with(&sep_prefix)
+                    || *path_str == *prefix
             } else {
                 glob_match(pattern, &path_str)
             }
@@ -122,6 +128,16 @@ mod tests {
         assert!(config.should_exclude(Path::new("project/target/debug/build")));
         assert!(config.should_exclude(Path::new("project/node_modules/foo")));
         assert!(!config.should_exclude(Path::new("project/src/main.rs")));
+    }
+
+    #[test]
+    fn test_should_exclude_respects_path_boundaries() {
+        let config = Config::default();
+        assert!(!config.should_exclude(Path::new("project/.gitignore")));
+        assert!(!config.should_exclude(Path::new("project/retarget/foo.rs")));
+        assert!(!config.should_exclude(Path::new("project/src/node_modules_helper.rs")));
+        assert!(config.should_exclude(Path::new(".git/HEAD")));
+        assert!(config.should_exclude(Path::new("target/release/bin")));
     }
 
     #[test]
