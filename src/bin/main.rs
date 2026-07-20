@@ -161,7 +161,7 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
     let (proc_tx, proc_rx) = std::sync::mpsc::channel();
     let proc_poll_interval = process_tracker.poll_interval();
 
-    thread::spawn(move || {
+    let proc_handle = thread::spawn(move || {
         while running_proc.load(Ordering::Relaxed) {
             let (spawns, exits) = process_tracker.poll();
             for event in spawns {
@@ -181,7 +181,7 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
     let (net_tx, net_rx) = std::sync::mpsc::channel();
     let net_poll_interval = network_observer.poll_interval();
 
-    thread::spawn(move || {
+    let net_handle = thread::spawn(move || {
         while running_net.load(Ordering::Relaxed) {
             let events = network_observer.poll();
             for event in events {
@@ -202,7 +202,9 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
     })?;
 
     running.store(false, Ordering::Relaxed);
-    thread::sleep(Duration::from_millis(100));
+
+    let _ = proc_handle.join();
+    let _ = net_handle.join();
 
     fs_watcher.stop();
 
