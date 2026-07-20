@@ -109,16 +109,18 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
 
     let workspace = workspace.canonicalize().unwrap_or(workspace);
 
-    eprintln!(
-        "{} recording session for: {}",
-        colored::Colorize::dimmed("postflight:"),
-        colored::Colorize::bold(command)
-    );
-    eprintln!(
-        "{} workspace: {}",
-        colored::Colorize::dimmed("postflight:"),
-        workspace.display()
-    );
+    if !quiet {
+        eprintln!(
+            "{} recording session for: {}",
+            colored::Colorize::dimmed("postflight:"),
+            colored::Colorize::bold(command)
+        );
+        eprintln!(
+            "{} workspace: {}",
+            colored::Colorize::dimmed("postflight:"),
+            workspace.display()
+        );
+    }
 
     let mut session = Session::create(command)?;
 
@@ -326,14 +328,16 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
         eprint!("{report_output}");
     }
 
-    eprintln!(
-        "{} session saved to {}",
-        colored::Colorize::dimmed("postflight:"),
-        session.dir.display()
-    );
+    if !quiet {
+        eprintln!(
+            "{} session saved to {}",
+            colored::Colorize::dimmed("postflight:"),
+            session.dir.display()
+        );
+    }
 
     let pruned = Session::prune_sessions(config.session_retention)?;
-    if pruned > 0 {
+    if pruned > 0 && !quiet {
         eprintln!(
             "{} pruned {pruned} old session(s)",
             colored::Colorize::dimmed("postflight:"),
