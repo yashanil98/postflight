@@ -340,8 +340,15 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
 }
 
 fn resolve_session_id(id: &str) -> Result<PathBuf> {
+    if id.is_empty() {
+        anyhow::bail!("session ID cannot be empty");
+    }
+    if id.contains('/') || id.contains('\\') || id.starts_with('.') {
+        anyhow::bail!("invalid session ID: '{id}'");
+    }
+
     let exact = Config::sessions_dir().join(id);
-    if exact.exists() {
+    if exact.exists() && exact.join("events.jsonl").exists() {
         return Ok(exact);
     }
 
