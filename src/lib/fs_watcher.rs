@@ -177,11 +177,20 @@ fn run_inotify_watcher(
 ) {
     use inotify::{EventMask, Inotify, WatchDescriptor, WatchMask};
     use std::collections::HashMap;
+    use std::os::fd::AsRawFd;
 
     let mut inotify = match Inotify::init() {
         Ok(i) => i,
         Err(_) => return,
     };
+
+    // Set inotify fd to non-blocking so read_events returns WouldBlock
+    // when no events are available, allowing the stop check to run.
+    unsafe {
+        let fd = inotify.as_raw_fd();
+        let flags = libc::fcntl(fd, libc::F_GETFL);
+        libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
+    }
 
     let watch_mask = WatchMask::CREATE
         | WatchMask::MODIFY
