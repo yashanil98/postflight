@@ -200,20 +200,23 @@ fn parse_remote_address(name: &str) -> Option<(String, u16)> {
         return None;
     };
 
-    if let Some(bracket_end) = remote_part.find(']') {
-        let host = &remote_part[1..bracket_end];
-        let port_str = &remote_part[bracket_end + 2..];
-        let port: u16 = port_str.parse().ok()?;
-        Some((host.to_string(), port))
+    let (host, port) = if let Some(bracket_end) = remote_part.find(']') {
+        let h = &remote_part[1..bracket_end];
+        let port_str = remote_part.get(bracket_end + 2..)?;
+        let p: u16 = port_str.parse().ok()?;
+        (h, p)
     } else {
         let last_colon = remote_part.rfind(':')?;
-        let host = &remote_part[..last_colon];
-        let port: u16 = remote_part[last_colon + 1..].parse().ok()?;
-        if host == "127.0.0.1" || host == "::1" || host == "localhost" {
-            return None;
-        }
-        Some((host.to_string(), port))
+        let h = &remote_part[..last_colon];
+        let p: u16 = remote_part[last_colon + 1..].parse().ok()?;
+        (h, p)
+    };
+
+    if host == "127.0.0.1" || host == "::1" || host == "localhost" {
+        return None;
     }
+
+    Some((host.to_string(), port))
 }
 
 #[cfg(test)]
@@ -236,6 +239,12 @@ mod tests {
     fn test_parse_ipv6() {
         let result = parse_remote_address("*:443->[2001:db8::1]:8080");
         assert_eq!(result, Some(("2001:db8::1".to_string(), 8080)));
+    }
+
+    #[test]
+    fn test_parse_ipv6_loopback_filtered() {
+        let result = parse_remote_address("*:5000->[::1]:3000");
+        assert_eq!(result, None);
     }
 
     #[test]
