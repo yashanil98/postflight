@@ -399,11 +399,16 @@ fn cmd_report(session_id: Option<String>, json: bool, show_diff: bool) -> Result
         if show_diff {
             let diffs_dir = session_dir.join("diffs");
             if diffs_dir.exists() {
-                println!("{}", colored::Colorize::bold("\u{2501}\u{2501}\u{2501} diffs \u{2501}\u{2501}\u{2501}"));
-                for entry in std::fs::read_dir(&diffs_dir)? {
-                    let entry = entry?;
-                    if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                        print!("{}", postflight::diff::format_diff_colored(&content));
+                let mut diff_entries: Vec<_> = std::fs::read_dir(&diffs_dir)?
+                    .filter_map(|e| e.ok())
+                    .collect();
+                diff_entries.sort_by_key(|e| e.file_name());
+                if !diff_entries.is_empty() {
+                    println!("{}", colored::Colorize::bold("\u{2501}\u{2501}\u{2501} diffs \u{2501}\u{2501}\u{2501}"));
+                    for entry in diff_entries {
+                        if let Ok(content) = std::fs::read_to_string(entry.path()) {
+                            print!("{}", postflight::diff::format_diff_colored(&content));
+                        }
                     }
                 }
             }
