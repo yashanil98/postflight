@@ -168,7 +168,10 @@ impl Session {
 
     pub fn latest_session() -> Result<Option<PathBuf>> {
         let sessions = Self::list_sessions()?;
-        Ok(sessions.into_iter().next().map(|(_, path)| path))
+        Ok(sessions
+            .into_iter()
+            .find(|(_, path)| path.join("summary.json").exists())
+            .map(|(_, path)| path))
     }
 
     pub fn prune_sessions(keep: usize) -> Result<usize> {
