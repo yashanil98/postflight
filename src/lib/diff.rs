@@ -150,6 +150,13 @@ pub fn generate_unified_diff_relative(
     workspace: Option<&Path>,
 ) -> String {
     let diff = TextDiff::from_lines(old_content, new_content);
+    let mut unified = diff.unified_diff();
+    let hunks: Vec<_> = unified.context_radius(3).iter_hunks().collect();
+
+    if hunks.is_empty() {
+        return String::new();
+    }
+
     let rel_path = workspace
         .and_then(|ws| path.strip_prefix(ws).ok())
         .unwrap_or(path);
@@ -159,7 +166,7 @@ pub fn generate_unified_diff_relative(
     output.push_str(&format!("--- a/{path_str}\n"));
     output.push_str(&format!("+++ b/{path_str}\n"));
 
-    for hunk in diff.unified_diff().context_radius(3).iter_hunks() {
+    for hunk in hunks {
         output.push_str(&format!("{hunk}"));
     }
 
@@ -199,6 +206,13 @@ mod tests {
         assert!(diff.contains("+++ b/test.txt"));
         assert!(diff.contains("-line2"));
         assert!(diff.contains("+modified"));
+    }
+
+    #[test]
+    fn test_unified_diff_identical_content_returns_empty() {
+        let content = "line1\nline2\nline3\n";
+        let diff = generate_unified_diff(content, content, Path::new("same.txt"));
+        assert!(diff.is_empty());
     }
 
     #[test]
