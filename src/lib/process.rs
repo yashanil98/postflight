@@ -69,7 +69,7 @@ impl ProcessTracker {
                 if tracked.reported_spawn {
                     exit_events.push(ProcessExitEvent {
                         pid,
-                        exit_code: 0,
+                        exit_code: None,
                         duration: tracked.start_time.elapsed(),
                         timestamp: Utc::now(),
                     });
@@ -86,7 +86,7 @@ impl ProcessTracker {
             if tracked.reported_spawn {
                 events.push(ProcessExitEvent {
                     pid,
-                    exit_code: 0,
+                    exit_code: None,
                     duration: tracked.start_time.elapsed(),
                     timestamp: Utc::now(),
                 });

@@ -115,11 +115,15 @@ pub fn render_terminal(summary: &SessionSummary, _show_diffs: bool) -> String {
             } else {
                 argv_str
             };
+            let exit_label = match proc.exit_code {
+                Some(code) => format!("[exit:{code}]"),
+                None => "[exit:?]".to_string(),
+            };
             output.push_str(&format!(
                 "  {} {} {} {}\n",
                 "\u{25b8}".dimmed(),
                 truncated,
-                format!("[exit:{}]", proc.exit_code).dimmed(),
+                exit_label.dimmed(),
                 format!("({})", format_duration(proc.duration)).dimmed()
             ));
         }

@@ -35,7 +35,8 @@ pub struct ConnectionSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubprocessSummary {
     pub argv: Vec<String>,
-    pub exit_code: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
     pub duration: Duration,
 }
 

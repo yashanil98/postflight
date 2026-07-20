@@ -288,6 +288,7 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
                     exit_code: e.exit_code,
                     duration: e.duration,
                 });
+
             }
         }
     }

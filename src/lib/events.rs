@@ -60,7 +60,8 @@ pub struct ProcessEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessExitEvent {
     pub pid: u32,
-    pub exit_code: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
     pub duration: Duration,
     pub timestamp: DateTime<Utc>,
 }
