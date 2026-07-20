@@ -337,6 +337,8 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
         );
     }
 
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+    let _ = std::io::Write::flush(&mut std::io::stderr());
     std::process::exit(pty_result.exit_code);
 }
 
