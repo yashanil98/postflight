@@ -175,13 +175,32 @@ impl Session {
         let mut removed = 0;
         if sessions.len() > keep {
             for (_, path) in sessions.into_iter().skip(keep) {
-                if !path.join("summary.json").exists() {
-                    continue;
+                let has_summary = path.join("summary.json").exists();
+                let has_events = path.join("events.jsonl").exists();
+
+                if !has_summary && has_events {
+                    let stale = is_stale_session(&path);
+                    if !stale {
+                        continue;
+                    }
                 }
+
                 let _ = fs::remove_dir_all(&path);
                 removed += 1;
             }
         }
         Ok(removed)
+    }
+}
+
+fn is_stale_session(session_dir: &Path) -> bool {
+    let events_path = session_dir.join("events.jsonl");
+    let mtime = match fs::metadata(&events_path).and_then(|m| m.modified()) {
+        Ok(t) => t,
+        Err(_) => return true,
+    };
+    match mtime.elapsed() {
+        Ok(age) => age > Duration::from_secs(60),
+        Err(_) => false,
     }
 }

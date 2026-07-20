@@ -156,6 +156,47 @@ fn test_clean() {
 }
 
 #[test]
+fn test_clean_removes_incomplete_sessions() {
+    use std::time::{Duration, SystemTime};
+
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+
+    let mut run_cmd = postflight_cmd_with_home(home.path());
+    run_cmd.args(["run", "true", "--workspace", workspace.path().to_str().unwrap()]);
+    run_cmd.assert().success();
+
+    let sessions_dir = home.path().join(".postflight/sessions");
+    let incomplete = sessions_dir.join("19700101_000000_000");
+    fs::create_dir_all(&incomplete).unwrap();
+    let events_path = incomplete.join("events.jsonl");
+    fs::write(&events_path, "{}\n").unwrap();
+
+    let old_time = SystemTime::now() - Duration::from_secs(120);
+    filetime::set_file_mtime(
+        &events_path,
+        filetime::FileTime::from_system_time(old_time),
+    )
+    .unwrap();
+
+    let entries_before: Vec<_> = fs::read_dir(&sessions_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .collect();
+    assert_eq!(entries_before.len(), 2);
+
+    let mut cmd = postflight_cmd_with_home(home.path());
+    cmd.args(["clean", "--keep", "1"]);
+    cmd.assert().success();
+
+    let entries_after: Vec<_> = fs::read_dir(&sessions_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .collect();
+    assert_eq!(entries_after.len(), 1);
+}
+
+#[test]
 fn test_run_with_network_activity() {
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
