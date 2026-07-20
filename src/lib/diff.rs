@@ -41,9 +41,13 @@ fn walk_dir(dir: &Path, exclude: &dyn Fn(&Path) -> bool, snapshot: &mut FileSnap
         if exclude(&path) {
             continue;
         }
-        if path.is_dir() {
+        let file_type = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
+        if file_type.is_dir() {
             walk_dir(&path, exclude, snapshot);
-        } else if path.is_file() {
+        } else if file_type.is_file() {
             if let Ok(metadata) = path.metadata() {
                 if let Ok(mtime) = metadata.modified() {
                     let content_hash = hash_file_content(&path);
@@ -55,6 +59,24 @@ fn walk_dir(dir: &Path, exclude: &dyn Fn(&Path) -> bool, snapshot: &mut FileSnap
                             content_hash,
                         },
                     );
+                }
+            }
+        } else if file_type.is_symlink() {
+            // Follow symlinks to files for content tracking, but never
+            // recurse into symlinked directories to avoid infinite loops.
+            if path.is_file() {
+                if let Ok(metadata) = path.metadata() {
+                    if let Ok(mtime) = metadata.modified() {
+                        let content_hash = hash_file_content(&path);
+                        snapshot.insert(
+                            path,
+                            SnapshotEntry {
+                                mtime,
+                                size: metadata.len(),
+                                content_hash,
+                            },
+                        );
+                    }
                 }
             }
         }
@@ -298,5 +320,24 @@ mod tests {
 
         let result = diff_snapshots(&before, &after);
         assert!(result.modified.is_empty());
+    }
+
+    #[test]
+    fn test_capture_snapshot_skips_symlink_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_file = dir.path().join("real.txt");
+        fs::write(&real_file, "content").unwrap();
+
+        let link_dir = dir.path().join("loop_link");
+        std::os::unix::fs::symlink(dir.path(), &link_dir).unwrap();
+
+        let snapshot = capture_snapshot(dir.path(), &|_| false);
+
+        assert!(snapshot.contains_key(&real_file));
+        let loop_file = link_dir.join("real.txt");
+        assert!(
+            !snapshot.contains_key(&loop_file),
+            "symlinked directory should not be recursed into"
+        );
     }
 }

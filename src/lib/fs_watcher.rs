@@ -151,9 +151,13 @@ fn scan_directory(
         if config.should_exclude(&path) {
             continue;
         }
-        if path.is_dir() {
+        let file_type = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
+        if file_type.is_dir() {
             scan_directory(&path, config, files);
-        } else if path.is_file() {
+        } else if file_type.is_file() || (file_type.is_symlink() && path.is_file()) {
             if let Ok(metadata) = path.metadata() {
                 if let Ok(mtime) = metadata.modified() {
                     files.insert(path, mtime);
