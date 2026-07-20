@@ -430,7 +430,8 @@ fn cmd_sessions(filter: Option<String>, failed: bool) -> Result<()> {
             }
 
             let cmd_display = if s.command.len() > 28 {
-                format!("{}...", &s.command[..25])
+                let truncated = truncate_str(&s.command, 25);
+                format!("{truncated}...")
             } else {
                 s.command.clone()
             };
@@ -464,6 +465,13 @@ fn format_duration_short(d: Duration) -> String {
         format!("{}m{}s", secs / 60, secs % 60)
     } else {
         format!("{}h{}m", secs / 3600, (secs % 3600) / 60)
+    }
+}
+
+fn truncate_str(s: &str, max_chars: usize) -> &str {
+    match s.char_indices().nth(max_chars) {
+        Some((byte_idx, _)) => &s[..byte_idx],
+        None => s,
     }
 }
 

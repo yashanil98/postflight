@@ -110,7 +110,8 @@ pub fn render_terminal(summary: &SessionSummary, _show_diffs: bool) -> String {
         for proc in &summary.subprocesses {
             let argv_str = proc.argv.join(" ");
             let truncated = if argv_str.len() > 80 {
-                format!("{}...", &argv_str[..77])
+                let cut = truncate_str(&argv_str, 77);
+                format!("{cut}...")
             } else {
                 argv_str
             };
@@ -178,6 +179,13 @@ fn file_size_label(path: &std::path::Path) -> String {
     match std::fs::metadata(path) {
         Ok(meta) => format!("({})", ByteSize(meta.len())),
         Err(_) => String::new(),
+    }
+}
+
+fn truncate_str(s: &str, max_chars: usize) -> &str {
+    match s.char_indices().nth(max_chars) {
+        Some((byte_idx, _)) => &s[..byte_idx],
+        None => s,
     }
 }
 
@@ -256,5 +264,15 @@ mod tests {
         assert_eq!(format_bytes(500), "500 B");
         assert_eq!(format_bytes(1536), "1.5 KiB");
         assert_eq!(format_bytes(1_572_864), "1.5 MiB");
+    }
+
+    #[test]
+    fn test_truncate_str_multibyte() {
+        assert_eq!(truncate_str("hello world", 5), "hello");
+        assert_eq!(truncate_str("短い", 1), "短");
+        assert_eq!(truncate_str("ab", 10), "ab");
+        let long_jp = "日本語のコマンド実行テスト";
+        let cut = truncate_str(long_jp, 5);
+        assert_eq!(cut, "日本語のコ");
     }
 }
