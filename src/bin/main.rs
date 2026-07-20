@@ -300,7 +300,7 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
         id: session.id.clone(),
         command: command.to_string(),
         workspace,
-        start_time: Utc::now() - chrono::Duration::from_std(pty_result.duration).unwrap_or_default(),
+        start_time: session.start_time,
         duration: pty_result.duration,
         exit_code: pty_result.exit_code,
         files_created,

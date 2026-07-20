@@ -42,6 +42,7 @@ pub struct SubprocessSummary {
 pub struct Session {
     pub id: String,
     pub dir: PathBuf,
+    pub start_time: DateTime<Utc>,
     events_file: std::fs::File,
 }
 
@@ -61,13 +62,14 @@ impl Session {
         let session = Self {
             id,
             dir,
+            start_time: now,
             events_file,
         };
 
         let start_event = Event::SessionStart(crate::events::SessionStartEvent {
             command: command.to_string(),
             workspace: std::env::current_dir().unwrap_or_default(),
-            timestamp: Utc::now(),
+            timestamp: now,
             pid: std::process::id(),
         });
         session.write_event_to_file(&start_event)?;
