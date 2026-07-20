@@ -68,6 +68,12 @@ impl FsWatcher {
     }
 }
 
+impl Drop for FsWatcher {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn run_polling_watcher(
     workspace: &Path,
@@ -85,7 +91,7 @@ fn run_polling_watcher(
     scan_directory(workspace, config, &mut known_files);
 
     loop {
-        if stop_rx.try_recv().is_ok() {
+        if stop_rx.try_recv() != Err(std::sync::mpsc::TryRecvError::Empty) {
             break;
         }
 
@@ -206,7 +212,7 @@ fn run_inotify_watcher(
     let mut buffer = [0u8; 4096];
 
     loop {
-        if stop_rx.try_recv().is_ok() {
+        if stop_rx.try_recv() != Err(std::sync::mpsc::TryRecvError::Empty) {
             break;
         }
 
