@@ -146,15 +146,16 @@ fn get_process_tree_pids(root_pid: u32) -> Vec<u32> {
 
     while let Some(parent) = to_check.pop() {
         let mut buf = [0i32; 512];
+        let buf_size = std::mem::size_of_val(&buf) as i32;
         let count = unsafe {
             libc::proc_listchildpids(
                 parent as i32,
                 buf.as_mut_ptr().cast(),
-                std::mem::size_of_val(&buf) as i32,
+                buf_size,
             )
         };
         if count > 0 {
-            let n = count as usize / std::mem::size_of::<i32>();
+            let n = (count as usize / std::mem::size_of::<i32>()).min(buf.len());
             for &pid in &buf[..n] {
                 if pid > 0 {
                     let upid = pid as u32;
