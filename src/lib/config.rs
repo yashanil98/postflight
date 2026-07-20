@@ -12,6 +12,11 @@ pub struct Config {
     pub process_poll_interval_ms: u64,
 }
 
+const BUILTIN_EXCLUDE_PATTERNS: &[&str] = &[
+    ".git/**",
+    ".postflight/**",
+];
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -65,7 +70,12 @@ impl Config {
 
     pub fn should_exclude(&self, path: &Path) -> bool {
         let path_str = path.to_string_lossy();
-        self.exclude_patterns.iter().any(|pattern| {
+        let mut all_patterns = self
+            .exclude_patterns
+            .iter()
+            .map(String::as_str)
+            .chain(BUILTIN_EXCLUDE_PATTERNS.iter().copied());
+        all_patterns.any(|pattern| {
             if let Some(prefix) = pattern.strip_suffix("/**") {
                 let sep_prefix_sep = format!("/{prefix}/");
                 let prefix_sep = format!("{prefix}/");
@@ -138,6 +148,18 @@ mod tests {
         assert!(!config.should_exclude(Path::new("project/src/node_modules_helper.rs")));
         assert!(config.should_exclude(Path::new(".git/HEAD")));
         assert!(config.should_exclude(Path::new("target/release/bin")));
+    }
+
+    #[test]
+    fn test_should_exclude_builtin_patterns_always_apply() {
+        let config = Config {
+            exclude_patterns: vec!["*.log".to_string()],
+            ..Config::default()
+        };
+        assert!(config.should_exclude(Path::new("project/.git/objects/abc")));
+        assert!(config.should_exclude(Path::new("project/.postflight/sessions/x")));
+        assert!(config.should_exclude(Path::new("debug.log")));
+        assert!(!config.should_exclude(Path::new("project/src/main.rs")));
     }
 
     #[test]
