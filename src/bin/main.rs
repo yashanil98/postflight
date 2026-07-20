@@ -136,20 +136,26 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
 
     // Forward SIGINT/SIGTERM to the child process so Ctrl+C kills the child,
     // not postflight. The session still gets saved after the child exits.
+    // The child_alive flag prevents signaling a recycled PID after exit.
+    let child_alive = Arc::new(AtomicBool::new(true));
+
     let child_pid_for_signal = child.pid;
-    let interrupted = Arc::new(AtomicBool::new(false));
-    let interrupted_handler = Arc::clone(&interrupted);
+    let alive_for_int = Arc::clone(&child_alive);
     unsafe {
         signal_hook::low_level::register(signal_hook::consts::SIGINT, move || {
-            interrupted_handler.store(true, Ordering::Relaxed);
-            let _ = nix::sys::signal::kill(child_pid_for_signal, nix::sys::signal::Signal::SIGINT);
+            if alive_for_int.load(Ordering::Relaxed) {
+                let _ = nix::sys::signal::kill(child_pid_for_signal, nix::sys::signal::Signal::SIGINT);
+            }
         })
     }
     .ok();
     let child_pid_for_term = child.pid;
+    let alive_for_term = Arc::clone(&child_alive);
     unsafe {
         signal_hook::low_level::register(signal_hook::consts::SIGTERM, move || {
-            let _ = nix::sys::signal::kill(child_pid_for_term, nix::sys::signal::Signal::SIGTERM);
+            if alive_for_term.load(Ordering::Relaxed) {
+                let _ = nix::sys::signal::kill(child_pid_for_term, nix::sys::signal::Signal::SIGTERM);
+            }
         })
     }
     .ok();
@@ -205,6 +211,7 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
         }
     })?;
 
+    child_alive.store(false, Ordering::Relaxed);
     running.store(false, Ordering::Relaxed);
 
     let _ = proc_handle.join();
