@@ -195,7 +195,9 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
 
     let pty_result = child.wait_with_output(|data| {
         let _ = session.write_terminal_chunk(data);
-        if json {
+        if json && quiet {
+            // --json --quiet: suppress child output entirely, only emit JSON
+        } else if json {
             let _ = std::io::Write::write_all(&mut std::io::stderr(), data);
         } else {
             let _ = std::io::Write::write_all(&mut std::io::stdout(), data);
