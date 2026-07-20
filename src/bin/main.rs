@@ -1,5 +1,5 @@
 use postflight::config::Config;
-use postflight::diff::{capture_content, capture_snapshot, diff_snapshots, generate_unified_diff};
+use postflight::diff::{capture_content, capture_snapshot, diff_snapshots, generate_unified_diff_relative};
 use postflight::events::{Event, SessionEndEvent};
 use postflight::fs_watcher::FsWatcher;
 use postflight::network::NetworkObserver;
@@ -229,7 +229,8 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
     for path in &files_modified {
         if let Some(old_text) = pre_content.get(path) {
             if let Ok(new_text) = std::fs::read_to_string(path) {
-                let diff_content = generate_unified_diff(old_text, &new_text, path);
+                let diff_content =
+                    generate_unified_diff_relative(old_text, &new_text, path, Some(&workspace));
                 if !diff_content.trim().is_empty() {
                     let filename = path.to_string_lossy();
                     session.save_diff(&filename, &diff_content)?;

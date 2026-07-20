@@ -118,8 +118,20 @@ pub fn diff_snapshots(before: &FileSnapshot, after: &FileSnapshot) -> DiffResult
 }
 
 pub fn generate_unified_diff(old_content: &str, new_content: &str, path: &Path) -> String {
+    generate_unified_diff_relative(old_content, new_content, path, None)
+}
+
+pub fn generate_unified_diff_relative(
+    old_content: &str,
+    new_content: &str,
+    path: &Path,
+    workspace: Option<&Path>,
+) -> String {
     let diff = TextDiff::from_lines(old_content, new_content);
-    let path_str = path.to_string_lossy();
+    let rel_path = workspace
+        .and_then(|ws| path.strip_prefix(ws).ok())
+        .unwrap_or(path);
+    let path_str = rel_path.to_string_lossy();
 
     let mut output = String::new();
     output.push_str(&format!("--- a/{path_str}\n"));
@@ -165,6 +177,18 @@ mod tests {
         assert!(diff.contains("+++ b/test.txt"));
         assert!(diff.contains("-line2"));
         assert!(diff.contains("+modified"));
+    }
+
+    #[test]
+    fn test_unified_diff_uses_relative_path() {
+        let old = "aaa\n";
+        let new = "bbb\n";
+        let abs_path = Path::new("/home/user/project/src/main.rs");
+        let workspace = Path::new("/home/user/project");
+        let diff = generate_unified_diff_relative(old, new, abs_path, Some(workspace));
+        assert!(diff.contains("--- a/src/main.rs"));
+        assert!(diff.contains("+++ b/src/main.rs"));
+        assert!(!diff.contains("/home/user/project"));
     }
 
     #[test]
