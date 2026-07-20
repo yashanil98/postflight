@@ -76,8 +76,19 @@ impl NetworkObserver {
 
     #[cfg(target_os = "linux")]
     fn get_connections(&self) -> Vec<NetworkEvent> {
+        let pids = get_process_tree_pids(self.root_pid);
+        if pids.is_empty() {
+            return Vec::new();
+        }
+
+        let pid_list = pids
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+
         let output = Command::new("lsof")
-            .args(["-i", "-n", "-P", "-p", &self.root_pid.to_string()])
+            .args(["-i", "-n", "-P", "-a", "-p", &pid_list])
             .output();
 
         match output {
@@ -149,6 +160,26 @@ fn get_process_tree_pids(root_pid: u32) -> Vec<u32> {
                     let upid = pid as u32;
                     pids.push(upid);
                     to_check.push(upid);
+                }
+            }
+        }
+    }
+
+    pids
+}
+
+#[cfg(target_os = "linux")]
+fn get_process_tree_pids(root_pid: u32) -> Vec<u32> {
+    let mut pids = vec![root_pid];
+    let mut to_check = vec![root_pid];
+
+    while let Some(parent) = to_check.pop() {
+        let children_path = format!("/proc/{parent}/task/{parent}/children");
+        if let Ok(content) = std::fs::read_to_string(&children_path) {
+            for part in content.split_whitespace() {
+                if let Ok(pid) = part.parse::<u32>() {
+                    pids.push(pid);
+                    to_check.push(pid);
                 }
             }
         }
