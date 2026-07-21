@@ -7,3 +7,4 @@ pub mod process;
 pub mod pty;
 pub mod report;
 pub mod session;
+pub mod shutdown;

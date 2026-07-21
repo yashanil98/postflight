@@ -7,10 +7,12 @@ use postflight::process::ProcessTracker;
 use postflight::pty::PtyChild;
 use postflight::report;
 use postflight::session::{ConnectionSummary, Session, SessionSummary, SubprocessSummary};
+use postflight::shutdown::GracefulShutdown;
 use anyhow::{Context, Result};
 use chrono::Utc;
 use clap::{Parser, Subcommand};
 use std::collections::HashSet;
+use std::os::fd::AsRawFd;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -86,6 +88,13 @@ enum Commands {
         #[arg(short, long)]
         session: Option<String>,
     },
+
+    /// Gracefully stop a running session (sends wrap-up message, then SIGTERM after grace period)
+    Stop {
+        /// Session ID to stop. Defaults to the most recent active session.
+        #[arg(short, long)]
+        session: Option<String>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -98,6 +107,7 @@ fn main() -> Result<()> {
         Commands::Clean { keep } => cmd_clean(keep),
         Commands::Init => cmd_init(),
         Commands::Replay { session } => cmd_replay(session),
+        Commands::Stop { session } => cmd_stop(session),
     }
 }
 
@@ -199,6 +209,17 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
         }
     });
 
+    let mut shutdown_watchdog = GracefulShutdown::new(
+        session.dir.clone(),
+        config.max_duration_secs.map(Duration::from_secs),
+        Duration::from_secs(config.grace_period_secs),
+        config.shutdown_message.clone(),
+        child.pid,
+        child.primary_fd.as_raw_fd(),
+        Arc::clone(&child_alive),
+    );
+    shutdown_watchdog.start(std::time::Instant::now());
+
     let pty_result = child.wait_with_output(|data| {
         let _ = session.write_terminal_chunk(data);
         if json && quiet {
@@ -212,6 +233,7 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
     })?;
 
     child_alive.store(false, Ordering::Relaxed);
+    shutdown_watchdog.stop();
     running.store(false, Ordering::Relaxed);
 
     let _ = proc_handle.join();
@@ -541,6 +563,16 @@ network_poll_interval_ms = 500
 
 # How often to poll for subprocess changes (milliseconds)
 process_poll_interval_ms = 250
+
+# Maximum session duration before triggering graceful shutdown (seconds)
+# Uncomment to enforce a timeout on agent sessions:
+# max_duration_secs = 3600
+
+# Grace period after sending wrap-up message before SIGTERM (seconds)
+grace_period_secs = 60
+
+# Message written to the agent's stdin when graceful shutdown begins
+shutdown_message = "You have 60 seconds to finish. Wrap up and produce your final output now.\n"
 "#,
     )?;
 
@@ -567,4 +599,39 @@ fn cmd_replay(session_id: Option<String>) -> Result<()> {
     let _ = std::io::Write::flush(&mut std::io::stdout());
 
     Ok(())
+}
+
+fn cmd_stop(session_id: Option<String>) -> Result<()> {
+    let session_dir = if let Some(id) = session_id {
+        resolve_session_id(&id)?
+    } else {
+        find_active_session()?.context("no active session found")?
+    };
+
+    let sentinel = GracefulShutdown::sentinel_path(&session_dir);
+    if sentinel.exists() {
+        println!("stop already requested for {}", session_dir.file_name().unwrap_or_default().to_string_lossy());
+        return Ok(());
+    }
+
+    std::fs::write(&sentinel, "")
+        .with_context(|| format!("failed to create stop sentinel in {}", session_dir.display()))?;
+
+    println!(
+        "graceful stop requested for session {}",
+        session_dir.file_name().unwrap_or_default().to_string_lossy()
+    );
+    println!("the agent will receive a wrap-up message and has a grace period to finish");
+
+    Ok(())
+}
+
+fn find_active_session() -> Result<Option<PathBuf>> {
+    let sessions = Session::list_sessions()?;
+    Ok(sessions
+        .into_iter()
+        .find(|(_, path)| {
+            !path.join("summary.json").exists() && path.join("events.jsonl").exists()
+        })
+        .map(|(_, path)| path))
 }

@@ -10,6 +10,9 @@ pub struct Config {
     pub exclude_patterns: Vec<String>,
     pub network_poll_interval_ms: u64,
     pub process_poll_interval_ms: u64,
+    pub max_duration_secs: Option<u64>,
+    pub grace_period_secs: u64,
+    pub shutdown_message: String,
 }
 
 const BUILTIN_EXCLUDE_PATTERNS: &[&str] = &[
@@ -30,6 +33,9 @@ impl Default for Config {
             ],
             network_poll_interval_ms: 500,
             process_poll_interval_ms: 250,
+            max_duration_secs: None,
+            grace_period_secs: 60,
+            shutdown_message: "You have 60 seconds to finish. Wrap up and produce your final output now.\n".to_string(),
         }
     }
 }
