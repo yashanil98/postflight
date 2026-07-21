@@ -48,7 +48,7 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn create(command: &str) -> Result<Self> {
+    pub fn create(command: &str, workspace: &Path) -> Result<Self> {
         let now = Utc::now();
         let base_id = now.format("%Y%m%d_%H%M%S").to_string();
         let millis = now.format("%3f").to_string();
@@ -69,7 +69,7 @@ impl Session {
 
         let start_event = Event::SessionStart(crate::events::SessionStartEvent {
             command: command.to_string(),
-            workspace: std::env::current_dir().unwrap_or_default(),
+            workspace: workspace.to_path_buf(),
             timestamp: now,
             pid: std::process::id(),
         });

@@ -122,7 +122,7 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
         );
     }
 
-    let mut session = Session::create(command)?;
+    let mut session = Session::create(command, &workspace)?;
 
     let exclude_fn = |p: &std::path::Path| config.should_exclude(p);
     let pre_snapshot = capture_snapshot(&workspace, &exclude_fn);
