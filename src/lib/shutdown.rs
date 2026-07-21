@@ -113,11 +113,17 @@ fn initiate_shutdown(
         return;
     }
 
+    // Phase 1: Send text message to stdin via PTY. AI agents that read
+    // stdin will see this and begin wrapping up intelligently — committing
+    // code, saving state, producing final output.
     let msg_bytes = message.as_bytes();
     unsafe {
         libc::write(primary_fd, msg_bytes.as_ptr().cast(), msg_bytes.len());
     }
 
+    // Phase 2: Wait the full grace period. Text-responsive agents (AI
+    // coding agents, REPLs, interactive programs) use this time to wrap up.
+    // If the process exits during this window, no escalation is needed.
     let deadline = Instant::now() + grace_period;
     while Instant::now() < deadline {
         if !child_alive.load(Ordering::Relaxed) {
@@ -126,20 +132,26 @@ fn initiate_shutdown(
         thread::sleep(Duration::from_millis(500));
     }
 
+    // Phase 3: SIGTERM the process group for processes that didn't respond
+    // to text. Sending to the negative PID targets the entire process group
+    // (the child shell + all its descendants), ensuring sleep/subprocesses
+    // also receive the signal.
     if !child_alive.load(Ordering::Relaxed) {
         return;
     }
-    let _ = kill(child_pid, Signal::SIGTERM);
+    let _ = kill(Pid::from_raw(-child_pid.as_raw()), Signal::SIGTERM);
 
-    let kill_deadline = Instant::now() + Duration::from_secs(10);
-    while Instant::now() < kill_deadline {
+    // Phase 4: Short wait for SIGTERM handler to run.
+    let term_deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < term_deadline {
         if !child_alive.load(Ordering::Relaxed) {
             return;
         }
         thread::sleep(Duration::from_millis(500));
     }
 
+    // Phase 5: SIGKILL the process group as absolute last resort.
     if child_alive.load(Ordering::Relaxed) {
-        let _ = kill(child_pid, Signal::SIGKILL);
+        let _ = kill(Pid::from_raw(-child_pid.as_raw()), Signal::SIGKILL);
     }
 }
