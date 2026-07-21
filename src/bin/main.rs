@@ -609,6 +609,13 @@ fn cmd_stop(session_id: Option<String>) -> Result<()> {
         find_active_session()?.context("no active session found")?
     };
 
+    if session_dir.join("summary.json").exists() {
+        anyhow::bail!(
+            "session {} has already completed",
+            session_dir.file_name().unwrap_or_default().to_string_lossy()
+        );
+    }
+
     let sentinel = GracefulShutdown::sentinel_path(&session_dir);
     if sentinel.exists() {
         println!("stop already requested for {}", session_dir.file_name().unwrap_or_default().to_string_lossy());
