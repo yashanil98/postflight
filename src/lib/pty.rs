@@ -176,10 +176,19 @@ impl PtyChild {
                                         n_in as usize - written,
                                     )
                                 };
-                                if n_out <= 0 {
-                                    break;
+                                match n_out.cmp(&0) {
+                                    std::cmp::Ordering::Greater => {
+                                        written += n_out as usize;
+                                    }
+                                    std::cmp::Ordering::Less => {
+                                        let err = std::io::Error::last_os_error();
+                                        if err.raw_os_error() == Some(libc::EINTR) {
+                                            continue;
+                                        }
+                                        break;
+                                    }
+                                    std::cmp::Ordering::Equal => break,
                                 }
-                                written += n_out as usize;
                             }
                         } else if n_in == 0 {
                             stdin_open = false;
