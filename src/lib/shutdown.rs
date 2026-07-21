@@ -81,6 +81,10 @@ impl GracefulShutdown {
     }
 
     pub fn stop(mut self) {
+        self.join_thread();
+    }
+
+    fn join_thread(&mut self) {
         if let Some(handle) = self.handle.take() {
             let _ = handle.join();
         }
@@ -88,6 +92,13 @@ impl GracefulShutdown {
 
     pub fn sentinel_path(session_dir: &Path) -> PathBuf {
         session_dir.join("stop_requested")
+    }
+}
+
+impl Drop for GracefulShutdown {
+    fn drop(&mut self) {
+        self.child_alive.store(false, Ordering::Relaxed);
+        self.join_thread();
     }
 }
 

@@ -234,6 +234,7 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
 
     child_alive.store(false, Ordering::Relaxed);
     shutdown_watchdog.stop();
+    let _ = std::fs::remove_file(GracefulShutdown::sentinel_path(&session.dir));
     running.store(false, Ordering::Relaxed);
 
     let _ = proc_handle.join();
