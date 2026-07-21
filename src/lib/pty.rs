@@ -68,6 +68,7 @@ impl PtyChild {
         let pid = unsafe { libc::fork() };
         match pid {
             -1 => {
+                unsafe { libc::close(secondary) };
                 anyhow::bail!("fork failed: {}", std::io::Error::last_os_error());
             }
             0 => {
