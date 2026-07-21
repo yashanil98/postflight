@@ -181,9 +181,10 @@ impl PtyChild {
                                 }
                                 written += n_out as usize;
                             }
-                        } else {
+                        } else if n_in == 0 {
                             stdin_open = false;
                         }
+                        // n_in < 0: transient error (e.g. EINTR), ignore and retry next poll
                     }
 
                     if child_revents.contains(PollFlags::POLLHUP)
