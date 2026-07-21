@@ -213,11 +213,20 @@ fn parse_remote_address(name: &str) -> Option<(String, u16)> {
         (h, p)
     };
 
-    if host == "127.0.0.1" || host == "::1" || host == "localhost" {
+    if is_loopback(host) {
         return None;
     }
 
     Some((host.to_string(), port))
+}
+
+fn is_loopback(host: &str) -> bool {
+    host == "127.0.0.1"
+        || host == "::1"
+        || host == "localhost"
+        || host.starts_with("127.")
+        || host == "::ffff:127.0.0.1"
+        || host.starts_with("::ffff:127.")
 }
 
 #[cfg(test)]
@@ -246,6 +255,18 @@ mod tests {
     fn test_parse_ipv6_loopback_filtered() {
         let result = parse_remote_address("*:5000->[::1]:3000");
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parse_ipv4_mapped_loopback_filtered() {
+        let result = parse_remote_address("*:5000->::ffff:127.0.0.1:8080");
+        assert_eq!(result, None);
+
+        let result = parse_remote_address("*:5000->127.0.0.2:8080");
+        assert_eq!(result, None);
+
+        let result = parse_remote_address("*:5000->10.0.0.1:8080");
+        assert_eq!(result, Some(("10.0.0.1".to_string(), 8080)));
     }
 
     #[test]
