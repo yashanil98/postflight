@@ -66,6 +66,7 @@ impl NetworkObserver {
 
         let output = Command::new("lsof")
             .args(["-i", "-n", "-P", "-a", "-p", &pid_list])
+            .stderr(std::process::Stdio::null())
             .output();
 
         match output {
@@ -89,6 +90,7 @@ impl NetworkObserver {
 
         let output = Command::new("lsof")
             .args(["-i", "-n", "-P", "-a", "-p", &pid_list])
+            .stderr(std::process::Stdio::null())
             .output();
 
         match output {
