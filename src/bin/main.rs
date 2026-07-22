@@ -220,17 +220,34 @@ fn cmd_run(command: &str, workspace_override: Option<PathBuf>, quiet: bool, json
     );
     shutdown_watchdog.start(std::time::Instant::now());
 
-    let pty_result = child.wait_with_output(|data| {
-        let _ = session.write_terminal_chunk(data);
-        if json && quiet {
-            // --json --quiet: suppress child output entirely, only emit JSON
-        } else if json {
-            let _ = std::io::Write::write_all(&mut std::io::stderr(), data);
-        } else {
-            let _ = std::io::Write::write_all(&mut std::io::stdout(), data);
-            let _ = std::io::Write::flush(&mut std::io::stdout());
+    // Pressing Ctrl+] in the session triggers a graceful stop by creating
+    // the same sentinel file that `postflight stop` writes. The watchdog
+    // picks it up within a second.
+    let sentinel_for_hotkey = GracefulShutdown::sentinel_path(&session.dir);
+    let hotkey_callback = move || {
+        if !sentinel_for_hotkey.exists() {
+            let _ = std::fs::write(&sentinel_for_hotkey, "");
+            eprintln!(
+                "\r\n{} graceful stop requested (Ctrl+]), agent will wrap up\r",
+                colored::Colorize::dimmed("postflight:")
+            );
         }
-    })?;
+    };
+
+    let pty_result = child.wait_with_output_and_hotkey(
+        |data| {
+            let _ = session.write_terminal_chunk(data);
+            if json && quiet {
+                // --json --quiet: suppress child output entirely, only emit JSON
+            } else if json {
+                let _ = std::io::Write::write_all(&mut std::io::stderr(), data);
+            } else {
+                let _ = std::io::Write::write_all(&mut std::io::stdout(), data);
+                let _ = std::io::Write::flush(&mut std::io::stdout());
+            }
+        },
+        Some(&hotkey_callback),
+    )?;
 
     child_alive.store(false, Ordering::Relaxed);
     shutdown_watchdog.stop();

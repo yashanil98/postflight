@@ -106,7 +106,22 @@ impl PtyChild {
         }
     }
 
-    pub fn wait_with_output<F>(&self, mut on_output: F) -> Result<PtyResult>
+    pub fn wait_with_output<F>(&self, on_output: F) -> Result<PtyResult>
+    where
+        F: FnMut(&[u8]),
+    {
+        self.wait_with_output_and_hotkey(on_output, None)
+    }
+
+    /// GS (Ctrl+]), the same escape key telnet uses. Rare enough to never
+    /// collide with normal agent interaction.
+    pub const STOP_HOTKEY: u8 = 0x1D;
+
+    pub fn wait_with_output_and_hotkey<F>(
+        &self,
+        mut on_output: F,
+        on_stop_hotkey: Option<&dyn Fn()>,
+    ) -> Result<PtyResult>
     where
         F: FnMut(&[u8]),
     {
@@ -168,13 +183,29 @@ impl PtyChild {
                             libc::read(stdin_fd, buf.as_mut_ptr().cast(), buf.len())
                         };
                         if n_in > 0 {
+                            let mut chunk = &buf[..n_in as usize];
+
+                            // Intercept the stop hotkey: trigger the callback
+                            // and strip it from the bytes forwarded to the child.
+                            let mut hotkey_buf;
+                            if let Some(callback) = on_stop_hotkey {
+                                if chunk.contains(&Self::STOP_HOTKEY) {
+                                    callback();
+                                    hotkey_buf = Vec::with_capacity(chunk.len());
+                                    hotkey_buf.extend(
+                                        chunk.iter().copied().filter(|&b| b != Self::STOP_HOTKEY),
+                                    );
+                                    chunk = &hotkey_buf;
+                                }
+                            }
+
                             let mut written = 0;
-                            while written < n_in as usize {
+                            while written < chunk.len() {
                                 let n_out = unsafe {
                                     libc::write(
                                         self.primary_fd.as_raw_fd(),
-                                        buf.as_ptr().add(written).cast(),
-                                        n_in as usize - written,
+                                        chunk.as_ptr().add(written).cast(),
+                                        chunk.len() - written,
                                     )
                                 };
                                 match n_out.cmp(&0) {

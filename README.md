@@ -16,11 +16,15 @@ postflight solves both.
 
 Stop a running agent **without losing work**. Instead of killing it, postflight sends a text message directly into the agent's stdin, the same channel it reads prompts from. The agent sees "wrap up now," finishes its current task, commits code, and exits cleanly.
 
+Three ways to trigger it:
+
 ```bash
-# In another terminal while the agent is running:
+# 1. Press Ctrl+] in the session itself (single terminal, easiest)
+
+# 2. From another terminal:
 postflight stop
 
-# Or set a time budget so the agent gets warned automatically:
+# 3. Set a time budget so the agent gets warned automatically:
 # config: max_duration_secs = 3600
 ```
 
@@ -98,7 +102,8 @@ cargo install --path .
 postflight run "claude code fix the auth bug"
 postflight run "aider --model claude-3.5-sonnet fix server.py"
 
-# Gracefully stop a running session (from another terminal)
+# Gracefully stop a running session: press Ctrl+] inside the session,
+# or from another terminal:
 postflight stop
 postflight stop --session 20260721_143022_456
 
@@ -166,6 +171,8 @@ The graceful shutdown works by:
 2. When triggered, it writes the shutdown message to the PTY primary fd (the agent's stdin)
 3. After the grace period, it signals the entire process group (SIGTERM then SIGKILL)
 4. `postflight stop` creates the sentinel file, no complex IPC needed
+5. Ctrl+] pressed inside the session creates the same sentinel (intercepted in the PTY
+   input loop before reaching the child, like telnet's escape key)
 
 ## How It Compares
 
