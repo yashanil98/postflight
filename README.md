@@ -5,8 +5,8 @@ Flight recorder and graceful shutdown controller for AI coding agents.
 ## The Problem
 
 AI coding agents run for minutes or hours, burning tokens and making changes to your codebase. You have no way to:
-1. **Stop them intelligently** — Ctrl+C kills them mid-thought. Files are half-written. Work is lost.
-2. **See what they did** — After they finish, you don't know which files they read, what network calls they made, or what subprocesses they spawned.
+1. **Stop them intelligently**: Ctrl+C kills them mid-thought. Files are half-written. Work is lost.
+2. **See what they did**: After they finish, you don't know which files they read, what network calls they made, or what subprocesses they spawned.
 
 postflight solves both.
 
@@ -14,13 +14,13 @@ postflight solves both.
 
 ### 1. Graceful Agent Shutdown (the killer feature)
 
-Stop a running agent **without losing work**. Instead of killing it, postflight sends a text message directly into the agent's stdin — the same channel it reads prompts from. The agent sees "wrap up now," finishes its current task, commits code, and exits cleanly.
+Stop a running agent **without losing work**. Instead of killing it, postflight sends a text message directly into the agent's stdin, the same channel it reads prompts from. The agent sees "wrap up now," finishes its current task, commits code, and exits cleanly.
 
 ```bash
 # In another terminal while the agent is running:
 postflight stop
 
-# Or set a time budget — agent gets warned automatically:
+# Or set a time budget so the agent gets warned automatically:
 # config: max_duration_secs = 3600
 ```
 
@@ -37,14 +37,14 @@ postflight stop
                               ← Only for truly stuck processes
 ```
 
-**Why this works:** AI agents are controlled via text, not OS signals. SIGTERM just kills them — they never "see" it. But a message on stdin enters their context window, and they can make intelligent decisions: commit the current change, save state, produce a summary. Traditional process supervisors (systemd, Kubernetes) can't do this because they only speak signals.
+**Why this works:** AI agents are controlled via text, not OS signals. SIGTERM just kills them; they never "see" it. But a message on stdin enters their context window, and they can make intelligent decisions: commit the current change, save state, produce a summary. Traditional process supervisors (systemd, Kubernetes) can't do this because they only speak signals.
 
 **Tested effectiveness (50 trials):**
 | Process type | Exits gracefully via text | Needs SIGTERM | Needs SIGKILL |
 |---|---|---|---|
 | AI coding agents | 100% | 0% | 0% |
 | Programs with cleanup handlers | 100% | 0% | 0% |
-| Programs that ignore stdin (sleep, dd) | — | 100% | 0% |
+| Programs that ignore stdin (sleep, dd) | n/a | 100% | 0% |
 
 ### 2. Full Session Recording
 
@@ -59,7 +59,7 @@ Records everything the agent does, structured and queryable:
 
 ### 3. Post-Session Report
 
-Scannable in 3 seconds — what happened, what changed, what talked to the network:
+Scannable in 3 seconds: what happened, what changed, what talked to the network:
 
 ```
 ━━━ postflight session report ━━━
@@ -165,15 +165,15 @@ The graceful shutdown works by:
 1. A watchdog thread checks every second for a `stop_requested` sentinel file or timeout
 2. When triggered, it writes the shutdown message to the PTY primary fd (the agent's stdin)
 3. After the grace period, it signals the entire process group (SIGTERM then SIGKILL)
-4. `postflight stop` creates the sentinel file — no complex IPC needed
+4. `postflight stop` creates the sentinel file, no complex IPC needed
 
 ## How It Compares
 
 | Tool | Graceful text stop | Session recording | Unprivileged | Platform |
 |------|-------------------|-------------------|--------------|----------|
 | **postflight** | Yes (stdin injection) | Full | Yes | macOS, Linux |
-| systemd | No (signals only) | Journal logs | — | Linux |
-| Kubernetes | No (signals only) | Pod logs | — | Any |
+| systemd | No (signals only) | Journal logs | n/a | Linux |
+| Kubernetes | No (signals only) | Pod logs | n/a | Any |
 | supervisord | No (signals only) | Log files | Yes | Any |
 | strace | No | Syscall trace | Root | Linux |
 
