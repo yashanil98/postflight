@@ -10,7 +10,7 @@ AI coding agents run for minutes or hours, burning tokens and making changes to 
 
 postflight solves both.
 
-## Features (ranked by importance)
+## Features
 
 ### 1. Graceful Agent Shutdown (the killer feature)
 
