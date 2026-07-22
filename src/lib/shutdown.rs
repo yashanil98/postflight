@@ -141,16 +141,17 @@ fn initiate_shutdown(
     }
     let _ = kill(Pid::from_raw(-child_pid.as_raw()), Signal::SIGTERM);
 
-    // Phase 4: Short wait for SIGTERM handler to run.
-    let term_deadline = Instant::now() + Duration::from_secs(10);
+    // Phase 4: Wait for SIGTERM to take effect (5 seconds).
+    let term_deadline = Instant::now() + Duration::from_secs(5);
     while Instant::now() < term_deadline {
         if !child_alive.load(Ordering::Relaxed) {
             return;
         }
-        thread::sleep(Duration::from_millis(500));
+        thread::sleep(Duration::from_millis(250));
     }
 
     // Phase 5: SIGKILL the process group as absolute last resort.
+    // Only reaches here for processes that deliberately ignore SIGTERM.
     if child_alive.load(Ordering::Relaxed) {
         let _ = kill(Pid::from_raw(-child_pid.as_raw()), Signal::SIGKILL);
     }
