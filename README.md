@@ -31,7 +31,7 @@ postflight stop
    ↓ (grace period expires)
 
 2. SIGTERM to process group   For processes that ignored the text
-   ↓ (10 second wait)        ← Catches daemons with cleanup handlers
+   ↓ (5 second wait)         ← Catches daemons with cleanup handlers
 
 3. SIGKILL                    Absolute last resort
                               ← Only for truly stuck processes

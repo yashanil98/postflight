@@ -182,6 +182,61 @@ terminal output design.
 5. **Single-machine, single-run scope**: No daemon mode, no remote collection, no aggregation.
    This is intentionally a single-session tool in v1.
 
+## Graceful Shutdown
+
+### Why Text Instead of Signals
+
+AI coding agents are LLM-driven processes that read prompts from stdin and write responses to
+stdout. They don't register SIGTERM handlers — they have no signal-based shutdown logic. When
+you send SIGTERM to an AI agent, it just dies. Files are half-written, the current thought is
+lost, and there's no summary of what was accomplished.
+
+The key insight: the agent's control channel is text on stdin, not Unix signals. To tell an
+agent to stop, you must speak its language — inject a text instruction into its input stream.
+
+### Implementation
+
+The graceful shutdown uses a PTY-based approach:
+
+1. **Sentinel file IPC**: `postflight stop` creates a `stop_requested` file in the session
+   directory. A watchdog thread in the running session checks for this file every second.
+   This avoids complex IPC (no sockets, no shared memory, no signal coordination).
+
+2. **PTY stdin injection**: When shutdown is triggered, the watchdog writes the shutdown
+   message directly to the PTY primary fd. From the child process's perspective, this is
+   indistinguishable from a human typing a message — it arrives on stdin through the normal
+   terminal input path.
+
+3. **Process group signaling**: After the grace period, SIGTERM is sent to the negative PID
+   (the entire process group), not just the shell. This ensures all descendants (subprocesses,
+   background jobs) also receive the signal and can run their cleanup handlers.
+
+4. **Escalation ladder**: text → grace period → SIGTERM (process group) → 5s → SIGKILL.
+   Each step only fires if the previous one didn't cause the process to exit.
+
+### Why Not Ctrl+C (ETX)
+
+Writing 0x03 (ETX, the byte Ctrl+C produces) to the PTY primary fd should theoretically
+generate SIGINT via the terminal line discipline. In practice, this is unreliable — it depends
+on the child's terminal mode (cooked vs raw), whether ISIG is set, and which process is in
+the foreground group. Testing showed it didn't reliably reach the target process. The text
+message approach is more reliable because it works regardless of terminal mode.
+
+### Timeout Budget
+
+The optional `max_duration_secs` config allows automatic shutdown after a time budget is
+exceeded. This is useful for CI/automation where agent sessions must complete within a window.
+The same escalation sequence applies — the agent gets the wrap-up message and full grace period
+before any signals are sent.
+
+### Tested Results
+
+50-trial benchmark across 5 process types:
+- AI agents (stdin-reading): 100% exit via text message alone
+- Programs with SIGTERM handlers: 100% exit via SIGTERM
+- Non-interactive processes (sleep): 100% exit via SIGTERM
+- Programs that explicitly ignore SIGTERM: SIGKILL (unavoidable by Unix design)
+
 ## v2 Roadmap
 
 - **eBPF backend** (Linux): Replace polling with BPF programs for process lifecycle and network
